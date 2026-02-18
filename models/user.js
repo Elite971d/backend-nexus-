@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String },
     email: { type: String, unique: true, required: true, lowercase: true },
-    passwordHash: { type: String, required: true },
+    passwordHash: { type: String, required: false }, // optional for passwordless (magic-link) users
     role: {
       type: String,
       enum: ['admin', 'manager', 'intake', 'analyst', 'viewer', 'dialer', 'closer'],
@@ -28,6 +28,7 @@ const userSchema = new mongoose.Schema(
 userSchema.index({ email: 1 }, { unique: true });
 
 userSchema.methods.comparePassword = function (pw) {
+  if (!this.passwordHash) return Promise.resolve(false);
   return bcrypt.compare(pw, this.passwordHash);
 };
 

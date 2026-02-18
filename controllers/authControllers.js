@@ -1,7 +1,12 @@
-// controllers/authControllers.js — Login, logout, me; JWT + httpOnly cookie
+// controllers/authControllers.js — Magic-link auth; JWT + httpOnly cookie (no passwords)
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
-const { jwtSecret, jwtExpiresIn, cookie } = require('../config/auth');
+const LoginToken = require('../models/LoginToken');
+const { jwtSecret, jwtExpiresIn, cookie, magicLinkSecret } = require('../config/auth');
+const { sendMagicLinkEmail } = require('../services/magicLinkEmailService');
+
+const MAGIC_LINK_EXPIRES_MINUTES = 15;
 
 function signToken(user) {
   return jwt.sign(
@@ -9,6 +14,10 @@ function signToken(user) {
     jwtSecret,
     { expiresIn: jwtExpiresIn }
   );
+}
+
+function hashToken(token) {
+  return crypto.createHmac('sha256', magicLinkSecret).update(token).digest('hex');
 }
 
 function toUserResponse(user) {
@@ -34,78 +43,83 @@ function toTenantResponse(tenant) {
 }
 
 /**
- * One-time register: only allowed if there are 0 users.
+ * POST /api/auth/request-link
+ * Body: { email }
+ * Same response whether email exists or not (no user enumeration).
+ * If user exists: create single-use token (hashed), store, send login link via SMTP.
  */
-exports.register = async (req, res, next) => {
+exports.requestLink = async (req, res, next) => {
   try {
-    const count = await User.countDocuments();
-    if (count > 0) {
-      return res
-        .status(403)
-        .json({ error: 'Registration disabled once admin exists.' });
+    const email = (req.body.email || '').toString().trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
     }
 
-    const { name, email, password } = req.body;
-    const passwordHash = await User.hashPassword(password);
+    const user = await User.findOne({ email }).select('_id');
+    if (user) {
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = hashToken(rawToken);
+      const expiresAt = new Date(Date.now() + MAGIC_LINK_EXPIRES_MINUTES * 60 * 1000);
+      await LoginToken.create({ tokenHash, userId: user._id, expiresAt });
 
-    // Create default tenant for first user
-    const Tenant = require('../models/Tenant');
-    let defaultTenant = await Tenant.findOne({ slug: 'elite-nexus' });
-    if (!defaultTenant) {
-      defaultTenant = await Tenant.create({
-        name: 'Elite Nexus',
-        slug: 'elite-nexus',
-        brandName: 'Elite Nexus',
-        primaryColor: '#0b1d51',
-        secondaryColor: '#ff6f00'
-      });
-    }
+      const baseUrl = process.env.APP_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`;
+      const loginLink = `${baseUrl.replace(/\/$/, '')}/api/auth/verify?token=${rawToken}`;
+      const deviceInfo = req.get('user-agent') || 'Unknown';
+      const ip = req.ip || req.connection?.remoteAddress || '';
 
-    const user = await User.create({ 
-      name, 
-      email, 
-      passwordHash, 
-      role: 'admin',
-      tenantId: defaultTenant._id 
-    });
-    const token = signToken(user);
-
-    res.json({
-      token,
-      user: { 
-        id: user._id, 
-        name: user.name, 
-        email: user.email, 
-        role: user.role,
-        tenantId: user.tenantId
-      },
-      tenant: {
-        id: defaultTenant._id,
-        name: defaultTenant.name,
-        brandName: defaultTenant.brandName,
-        logoUrl: defaultTenant.logoUrl,
-        primaryColor: defaultTenant.primaryColor,
-        secondaryColor: defaultTenant.secondaryColor
+      try {
+        await sendMagicLinkEmail({
+          to: email,
+          loginLink,
+          deviceInfo,
+          ip,
+          expiresMinutes: MAGIC_LINK_EXPIRES_MINUTES
+        });
+      } catch (err) {
+        // Log but do not leak; return same success message
+        req.log?.warn?.({ err: err.message }, 'Magic link email send failed');
       }
+    }
+
+    res.status(200).json({
+      message: 'If an account exists for this email, you will receive a login link shortly. Check your inbox and spam folder.'
     });
   } catch (err) {
     next(err);
   }
 };
 
-exports.login = async (req, res, next) => {
+/**
+ * GET /api/auth/verify?token=...
+ * Validate single-use token, set httpOnly secure JWT cookie, invalidate token.
+ */
+exports.verify = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    const rawToken = (req.query.token || '').toString().trim();
+    if (!rawToken) {
+      return res.status(400).json({ error: 'Token is required' });
     }
-    const user = await User.findOne({ email: email.toLowerCase() }).populate('tenantId');
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const match = await user.comparePassword(password);
-    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+    const tokenHash = hashToken(rawToken);
+    const record = await LoginToken.findOne({ tokenHash }).exec();
+    if (!record) {
+      return res.status(401).json({ error: 'Invalid or expired link' });
+    }
+    if (record.usedAt) {
+      return res.status(401).json({ error: 'This link has already been used' });
+    }
+    if (new Date() > record.expiresAt) {
+      return res.status(401).json({ error: 'This link has expired' });
+    }
 
-    // Ensure user has tenantId (migration fallback)
+    record.usedAt = new Date();
+    await record.save();
+
+    const user = await User.findById(record.userId).populate('tenantId').select('-passwordHash');
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
     if (!user.tenantId) {
       const Tenant = require('../models/Tenant');
       let defaultTenant = await Tenant.findOne({ slug: 'elite-nexus' });
@@ -123,9 +137,7 @@ exports.login = async (req, res, next) => {
     }
 
     const token = signToken(user);
-    // Set httpOnly cookie (primary auth for browser)
     res.cookie(cookie.name, token, cookie.options);
-    // Also return token for Socket.IO and legacy clients (optional; cookie is authoritative)
     res.json({
       token,
       user: toUserResponse(user),
@@ -136,8 +148,55 @@ exports.login = async (req, res, next) => {
   }
 };
 
+/**
+ * One-time register: only allowed if there are 0 users. No password (passwordless).
+ */
+exports.register = async (req, res, next) => {
+  try {
+    const count = await User.countDocuments();
+    if (count > 0) {
+      return res
+        .status(403)
+        .json({ error: 'Registration disabled once admin exists.' });
+    }
+
+    const { name, email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const Tenant = require('../models/Tenant');
+    let defaultTenant = await Tenant.findOne({ slug: 'elite-nexus' });
+    if (!defaultTenant) {
+      defaultTenant = await Tenant.create({
+        name: 'Elite Nexus',
+        slug: 'elite-nexus',
+        brandName: 'Elite Nexus',
+        primaryColor: '#0b1d51',
+        secondaryColor: '#ff6f00'
+      });
+    }
+
+    const user = await User.create({
+      name: name || '',
+      email: email.trim().toLowerCase(),
+      role: 'admin',
+      tenantId: defaultTenant._id
+    });
+    const token = signToken(user);
+
+    res.json({
+      token,
+      user: toUserResponse(user),
+      tenant: toTenantResponse(defaultTenant)
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.logout = (req, res) => {
-  const clearOpts = { path: '/', httpOnly: true };
+  const clearOpts = { path: '/', httpOnly: true, secure: cookie.options.secure, sameSite: cookie.options.sameSite };
   if (process.env.COOKIE_DOMAIN) clearOpts.domain = process.env.COOKIE_DOMAIN;
   res.clearCookie(cookie.name, clearOpts);
   res.json({ ok: true });

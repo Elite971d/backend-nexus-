@@ -45,21 +45,18 @@ async function seedAdmin() {
     }
 
     const adminEmail = process.env.ADMIN_EMAIL;
-    const adminPassword = process.env.ADMIN_PASSWORD;
 
-    if (!adminEmail || !adminPassword) {
-      console.warn('⚠️  ADMIN_EMAIL and ADMIN_PASSWORD not set — skipping admin seed');
-      console.warn('   Set these in Fly.io: fly secrets set ADMIN_EMAIL="..." ADMIN_PASSWORD="..."');
+    if (!adminEmail) {
+      console.warn('⚠️  ADMIN_EMAIL not set — skipping admin seed');
+      console.warn('   Set in Fly.io: fly secrets set ADMIN_EMAIL="..."');
       return;
     }
 
     const tenantId = await ensureDefaultTenant();
-    const passwordHash = await User.hashPassword(adminPassword);
 
     const adminUser = await User.create({
       tenantId,
       email: adminEmail.toLowerCase(),
-      passwordHash,
       role: 'admin',
       name: 'Admin User'
     });
