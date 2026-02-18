@@ -1,0 +1,3043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EliteNexus Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<!--
+====================================================
+ELITENEXUS DASHBOARD - CONFIGURATION
+====================================================
+
+API_BASE Configuration:
+- Automatically detects localhost vs production
+- Localhost: http://localhost:5000
+- Production: https://elitenexus-backend-fly.fly.dev
+- To change production URL, update the API_BASE constant in the script section
+
+Required Backend Endpoints:
+- POST /api/auth/login - Authentication
+- GET /api/preforeclosures - Pre-foreclosure data
+- GET /api/taxliens - Tax lien data
+- GET /api/codeviolations - Code violation data
+- GET /api/probate - Probate data
+- GET /api/crm/leads - CRM leads (protected)
+- POST /api/crm/leads/:id/status - Update lead status (protected)
+- GET /api/letter/:id - Download letter (protected)
+- GET /api/rapid-offer/dialer/queue - Dialer queue (protected)
+- GET /api/rapid-offer/dialer/leads/:id - Dialer lead detail (protected)
+- POST /api/rapid-offer/dialer/leads/:id/intake - Update intake (protected)
+- POST /api/rapid-offer/dialer/leads/:id/send-to-closer - Send to closer (protected)
+- GET /api/rapid-offer/closer/queue - Closer queue (protected)
+- GET /api/rapid-offer/closer/leads/:id - Closer lead detail (protected)
+- POST /api/rapid-offer/closer/leads/:id/request-info - Request info (protected)
+- POST /api/rapid-offer/closer/leads/:id/offer - Set offer (protected)
+- GET /api/templates - Get templates (protected)
+- POST /api/templates - Create template (protected, admin/manager)
+- PUT /api/templates/:id - Update template (protected, admin/manager)
+- POST /api/templates/:id/approve - Approve template (protected, admin/manager)
+- POST /api/templates/:id/activate - Activate template (protected, admin/manager)
+====================================================
+-->
+<style>
+:root {
+--primary-color: #0b1d51;
+--secondary-color: #ff6f00;
+--accent-color: #f0f2f5;
+--text-color: #1c1c1c;
+--card-shadow: rgba(0,0,0,0.08);
+--transition-speed: 0.4s;
+--success-color: #28a745;
+--error-color: #dc3545;
+--warning-color: #ffc107;
+}
+
+/* Global Styles */
+* { box-sizing: border-box; }
+body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--accent-color); color: var(--text-color); }
+header { background: linear-gradient(90deg, var(--primary-color), #132a6f); color: white; padding: 1rem 1rem; display: flex; flex-direction: column; align-items: flex-start; box-shadow: 0 4px 15px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; }
+header h1 { font-size: 1.9rem; font-weight: 700; margin: 0 0 0.5rem 0; }
+header .header-content { display: flex; align-items: center; width: 100%; }
+
+/* Status Banner */
+.status-banner {
+background: rgba(255,255,255,0.1);
+padding: 0.5rem 1rem;
+border-radius: 6px;
+margin-bottom: 0.5rem;
+font-size: 0.85rem;
+display: flex;
+gap: 1rem;
+flex-wrap: wrap;
+}
+.status-banner .status-item {
+display: flex;
+align-items: center;
+gap: 0.3rem;
+}
+.status-banner .status-indicator {
+width: 8px;
+height: 8px;
+border-radius: 50%;
+display: inline-block;
+}
+.status-banner .status-indicator.connected { background: var(--success-color); }
+.status-banner .status-indicator.disconnected { background: var(--error-color); }
+.status-banner .status-indicator.authenticated { background: var(--success-color); }
+.status-banner .status-indicator.not-authenticated { background: var(--warning-color); }
+
+/* Tabs */
+nav { display: flex; flex-wrap: nowrap; overflow-x: auto; width: 100%; gap: 0.5rem; padding-bottom: 0.5rem; }
+nav::-webkit-scrollbar { height: 5px; }
+nav::-webkit-scrollbar-thumb { background-color: var(--primary-color); border-radius: 3px; }
+nav::-webkit-scrollbar-track { background: #f0f2f5; }
+nav a { color: white; text-decoration: none; font-weight: 600; padding: 0.5rem 1rem; border-radius: 6px; transition: all var(--transition-speed); flex-shrink: 0; white-space: nowrap; }
+nav a.active, nav a:hover { color: #fff; }
+
+/* Auth bar */
+.auth-bar {
+margin-top: 0.4rem;
+display: flex;
+flex-wrap: wrap;
+gap: 0.4rem;
+align-items: center;
+}
+.auth-bar input {
+padding: 0.25rem 0.4rem;
+border-radius: 4px;
+border: none;
+min-width: 140px;
+font-size: 0.8rem;
+}
+.auth-bar button {
+padding: 0.3rem 0.7rem;
+border-radius: 4px;
+border: none;
+background: var(--secondary-color);
+color: #fff;
+font-weight: 600;
+cursor: pointer;
+font-size: 0.8rem;
+}
+.auth-bar button.logout {
+background: #dc3545;
+}
+#login-status {
+font-size: 0.8rem;
+}
+#auth-debug {
+font-size: 0.7rem;
+opacity: 0.6;
+display: none;
+}
+#auth-debug.show { display: block; }
+
+/* Card Containers */
+.card-container { width: 100%; padding: 1.5rem; margin-bottom: 1.5rem; border-radius: 15px; box-shadow: 0 10px 25px var(--card-shadow); overflow: hidden; word-wrap: break-word; opacity: 0; transform: translateY(20px); animation: fadeInUp 0.6s forwards; }
+
+/* Tab-specific card colors */
+#preforce-tab { background-color: #ffffff; }
+#tax-tab { background-color: #f9f9ff; }
+#code-tab { background-color: #fffaf0; }
+#probate-tab { background-color: #f0fff4; }
+#crm-tab { background-color: #e6f7ff; }
+#dialer-tab { background-color: #fff5e6; }
+#closer-tab { background-color: #e6f3ff; }
+#templates-tab { background-color: #f5f0ff; }
+
+/* Tab link colors per tab */
+.tab-link[data-tab="preforce"].active { background-color: #0b1d51; }
+.tab-link[data-tab="tax"].active { background-color: #1a2b70; }
+.tab-link[data-tab="code"].active { background-color: #ff6f00; }
+.tab-link[data-tab="probate"].active { background-color: #007a3d; }
+.tab-link[data-tab="crm"].active { background-color: #005b96; }
+.tab-link[data-tab="dialer"].active { background-color: #ff6f00; }
+.tab-link[data-tab="closer"].active { background-color: #005b96; }
+.tab-link[data-tab="templates"].active { background-color: #6f42c1; }
+.tab-link[data-tab="notifications"].active { background-color: #dc3545; }
+.tab-link[data-tab="messages"].active { background-color: #28a745; }
+
+/* Notification bell icon */
+.notification-bell {
+  position: relative;
+  cursor: pointer;
+  margin-left: auto;
+  padding: 0.5rem;
+  color: white;
+  font-size: 1.2rem;
+}
+.notification-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--secondary-color);
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.notification-drawer {
+  position: fixed;
+  top: 0;
+  right: -400px;
+  width: 400px;
+  height: 100vh;
+  background: white;
+  box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+  z-index: 2000;
+  transition: right 0.3s ease;
+  overflow-y: auto;
+}
+.notification-drawer.open {
+  right: 0;
+}
+.notification-drawer-header {
+  padding: 1rem;
+  background: var(--primary-color);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.notification-item {
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+.notification-item.unread {
+  background: #f0f7ff;
+  font-weight: 600;
+}
+.notification-item:hover {
+  background: #f9f9f9;
+}
+.notification-item .priority-high {
+  border-left: 4px solid #dc3545;
+}
+.notification-item .priority-normal {
+  border-left: 4px solid #005b96;
+}
+.notification-item .priority-low {
+  border-left: 4px solid #6c757d;
+}
+
+/* Messages UI */
+.messages-container {
+  display: flex;
+  height: 70vh;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.messages-thread-list {
+  width: 300px;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
+  background: #f9f9f9;
+}
+.messages-thread-item {
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+.messages-thread-item:hover {
+  background: #f0f0f0;
+}
+.messages-thread-item.active {
+  background: #e6f7ff;
+  border-left: 4px solid var(--primary-color);
+}
+.messages-thread-item.unread {
+  font-weight: 600;
+}
+.messages-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.messages-header {
+  padding: 1rem;
+  background: #f9f9f9;
+  border-bottom: 1px solid #ddd;
+}
+.messages-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+.message-item {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  max-width: 70%;
+}
+.message-item.outbound {
+  background: #e6f7ff;
+  margin-left: auto;
+}
+.message-item.inbound {
+  background: #f0f0f0;
+}
+.message-send-box {
+  padding: 1rem;
+  border-top: 1px solid #ddd;
+  display: flex;
+  gap: 0.5rem;
+}
+.message-send-box textarea {
+  flex: 1;
+  min-height: 60px;
+}
+.message-send-box select {
+  width: 120px;
+}
+
+@keyframes fadeInUp { to { opacity: 1; transform: translateY(0); } }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.95rem; }
+th, td { padding: 0.6rem 0.8rem; border-bottom: 1px solid #eee; text-align: left; white-space: nowrap; }
+th { background-color: var(--primary-color); color: white; font-weight: 600; }
+tr:hover { background-color: #f9f9f9; }
+
+/* Buttons */
+button { background-color: var(--secondary-color); border: none; padding: 0.55rem 1.2rem; color: white; font-weight: 600; border-radius: 6px; cursor: pointer; margin-top: 0.4rem; margin-right: 0.3rem; transition: background-color var(--transition-speed), transform var(--transition-speed); }
+button:hover { background-color: #e65a00; transform: scale(1.03); }
+button:disabled { background-color: #ccc; cursor: not-allowed; transform: none; }
+button.secondary { background-color: #6c757d; }
+button.secondary:hover { background-color: #5a6268; }
+button.success { background-color: var(--success-color); }
+button.success:hover { background-color: #218838; }
+button.danger { background-color: var(--error-color); }
+button.danger:hover { background-color: #c82333; }
+
+/* Forms */
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; margin-bottom: 0.3rem; font-weight: 600; font-size: 0.9rem; }
+.form-group input,
+.form-group select,
+.form-group textarea {
+width: 100%;
+padding: 0.5rem;
+border: 1px solid #ccc;
+border-radius: 4px;
+font-size: 0.9rem;
+font-family: inherit;
+}
+.form-group input[type="checkbox"] {
+width: auto;
+margin-right: 0.5rem;
+}
+.form-group textarea {
+min-height: 80px;
+resize: vertical;
+}
+.form-group .required { color: var(--error-color); }
+.form-row {
+display: flex;
+gap: 1rem;
+}
+.form-row .form-group {
+flex: 1;
+}
+
+/* Error Messages */
+.error-message {
+background: #fee;
+color: var(--error-color);
+padding: 0.75rem;
+border-radius: 6px;
+margin: 0.5rem 0;
+border-left: 4px solid var(--error-color);
+}
+.success-message {
+background: #efe;
+color: var(--success-color);
+padding: 0.75rem;
+border-radius: 6px;
+margin: 0.5rem 0;
+border-left: 4px solid var(--success-color);
+}
+
+/* Queue Filters */
+.queue-filters {
+margin: 0.5rem 0;
+display: flex;
+flex-wrap: wrap;
+gap: 0.5rem;
+}
+.queue-filters button {
+margin: 0;
+}
+
+/* Lead Detail Panel */
+.lead-detail {
+background: #f9f9f9;
+padding: 1rem;
+border-radius: 8px;
+margin: 1rem 0;
+}
+.lead-detail h3 {
+margin-top: 0;
+color: var(--primary-color);
+}
+.lead-detail .field-group {
+margin-bottom: 1rem;
+}
+.lead-detail .field-label {
+font-weight: 600;
+font-size: 0.85rem;
+color: #666;
+margin-bottom: 0.2rem;
+}
+.lead-detail .field-value {
+font-size: 0.95rem;
+}
+.lead-detail .read-only {
+background: #e9ecef;
+padding: 0.3rem 0.5rem;
+border-radius: 4px;
+}
+
+/* Template Library */
+.template-section {
+margin-bottom: 2rem;
+}
+.template-list {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+gap: 1rem;
+margin-top: 1rem;
+}
+.template-card {
+background: white;
+border: 1px solid #ddd;
+border-radius: 8px;
+padding: 1rem;
+}
+.template-card h4 {
+margin: 0 0 0.5rem 0;
+color: var(--primary-color);
+}
+.template-card .template-meta {
+font-size: 0.8rem;
+color: #666;
+margin-bottom: 0.5rem;
+}
+.template-card .template-status {
+display: inline-block;
+padding: 0.2rem 0.5rem;
+border-radius: 4px;
+font-size: 0.75rem;
+font-weight: 600;
+margin-right: 0.5rem;
+}
+.template-card .template-status.draft { background: #fff3cd; color: #856404; }
+.template-card .template-status.approved { background: #d1ecf1; color: #0c5460; }
+.template-card .template-status.active { background: #d4edda; color: #155724; }
+.template-card .template-actions {
+margin-top: 0.5rem;
+display: flex;
+gap: 0.5rem;
+flex-wrap: wrap;
+}
+.template-card .template-content {
+max-height: 150px;
+overflow-y: auto;
+font-size: 0.85rem;
+color: #555;
+margin: 0.5rem 0;
+padding: 0.5rem;
+background: #f9f9f9;
+border-radius: 4px;
+}
+
+footer { text-align: center; padding: 1.5rem; margin-top: 2rem; color: #777; font-size: 0.9rem; }
+
+/* Mobile Slider */
+.slider { display: none; overflow: hidden; position: relative; margin-top: 1.5rem; }
+.slide { min-width: 100%; transition: transform 0.4s ease; }
+
+/* Mobile Bottom Navigation */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  border-top: 1px solid #ddd;
+  padding: 0.5rem 0;
+  z-index: 1000;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+}
+.mobile-bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem;
+  text-decoration: none;
+  color: #666;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.mobile-bottom-nav-item.active {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+.mobile-bottom-nav-item span {
+  margin-top: 0.25rem;
+}
+
+/* Mobile Dialer UI */
+.mobile-queue-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+.mobile-queue-card h4 {
+  margin: 0 0 0.5rem 0;
+  color: var(--primary-color);
+}
+.mobile-queue-card .meta {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0.25rem 0;
+}
+
+/* Responsive Styles */
+@media(max-width: 768px) {
+.card-container { min-width: 90%; padding: 1.5rem 1rem; padding-bottom: 80px; } /* Add bottom padding for mobile nav */
+table { display: block; width: 100%; overflow-x: auto; }
+.slider { display: flex; }
+[id$="-tab"] { display: none; } /* hide desktop cards on mobile */
+.form-row { flex-direction: column; }
+.template-list { grid-template-columns: 1fr; }
+.mobile-bottom-nav { display: flex; }
+header { position: sticky; top: 0; z-index: 999; }
+}
+table::-webkit-scrollbar { height: 6px; }
+table::-webkit-scrollbar-thumb { background-color: var(--primary-color); border-radius: 3px; }
+table::-webkit-scrollbar-track { background: #f0f2f5; }
+
+/* CRM Filters */
+.crm-filters {
+margin: 0.5rem 0;
+display: flex;
+flex-wrap: wrap;
+gap: 0.5rem;
+}
+.crm-filters select,
+.crm-filters input {
+padding: 0.35rem 0.5rem;
+border-radius: 6px;
+border: 1px solid #ccc;
+font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+
+<header>
+<div class="header-content">
+<h1>EliteNexus Dashboard</h1>
+<div class="notification-bell" onclick="toggleNotificationDrawer()" title="Notifications">
+  🔔
+  <span class="notification-badge" id="notification-badge" style="display: none;">0</span>
+</div>
+</div>
+<div class="status-banner" id="status-banner">
+<div class="status-item">
+<span class="status-indicator disconnected" id="api-status-indicator"></span>
+<span id="api-status-text">Checking connection...</span>
+</div>
+<div class="status-item">
+<span class="status-indicator not-authenticated" id="auth-status-indicator"></span>
+<span id="auth-status-text">Not authenticated</span>
+</div>
+</div>
+<nav>
+<a class="tab-link active" data-tab="preforce">Pre-Foreclosures</a>
+<a class="tab-link" data-tab="tax">Tax Liens</a>
+<a class="tab-link" data-tab="code">Code Violations</a>
+<a class="tab-link" data-tab="probate">Probate</a>
+<a class="tab-link" data-tab="crm">CRM &amp; Follow Ups</a>
+<a class="tab-link" data-tab="dialer">Dialer Workspace</a>
+<a class="tab-link" data-tab="closer">Closer Workspace</a>
+<a class="tab-link" data-tab="templates">Templates</a>
+<a class="tab-link" data-tab="notifications">Notifications</a>
+<a class="tab-link" data-tab="messages">Messages</a>
+</nav>
+
+<div class="auth-bar">
+<form id="login-form" style="display: flex; gap: 0.4rem; align-items: center;">
+<input type="email" id="login-email" placeholder="Email" required>
+<input type="password" id="login-password" placeholder="Password" required>
+<button type="submit">Login</button>
+</form>
+<span id="login-status"></span>
+<button id="logout-btn" class="logout" style="display: none;" onclick="handleLogout()">Logout</button>
+<div id="auth-debug"></div>
+</div>
+</header>
+
+<main>
+<!-- Desktop Cards -->
+<div class="card-container" id="preforce-tab">
+<h2>Pre-Foreclosures</h2>
+<p>Track pre-foreclosure leads across multiple counties with owner info and auction dates.</p>
+<button onclick="exportCSV('preforce')">Export CSV</button>
+<div id="preforce-error"></div>
+<table id="preforce-table">
+<thead>
+<tr>
+<th>Owner</th>
+<th>Property Address</th>
+<th>Delinquent Amount</th>
+<th>Auction Date</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div class="card-container" id="tax-tab" style="display:none;">
+<h2>Tax Liens</h2>
+<p>Delinquent tax lists including property values, owners, and amounts owed.</p>
+<button onclick="exportCSV('tax')">Export CSV</button>
+<div id="tax-error"></div>
+<table id="tax-table">
+<thead>
+<tr>
+<th>Owner</th>
+<th>Property Address</th>
+<th>Amount Owed</th>
+<th>Years Owed</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div class="card-container" id="code-tab" style="display:none;">
+<h2>Code Violations</h2>
+<p>Monitor properties with violations: junk, vacant, unsafe, abandoned lots.</p>
+<button onclick="exportCSV('code')">Export CSV</button>
+<div id="code-error"></div>
+<table id="code-table">
+<thead>
+<tr>
+<th>Owner</th>
+<th>Property Address</th>
+<th>Violation</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div class="card-container" id="probate-tab" style="display:none;">
+<h2>Probate Records</h2>
+<p>Executor, attorney, and estate info for off-market opportunities.</p>
+<button onclick="exportCSV('probate')">Export CSV</button>
+<div id="probate-error"></div>
+<table id="probate-table">
+<thead>
+<tr>
+<th>Executor</th>
+<th>Attorney</th>
+<th>Property Address</th>
+<th>Case Number</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<!-- CRM Card -->
+<div class="card-container" id="crm-tab" style="display:none;">
+<h2>CRM &amp; Follow Ups</h2>
+<p>Manage motivated seller leads, statuses, tags, and follow-ups.</p>
+<div id="crm-error"></div>
+
+<div class="crm-filters">
+<select id="crm-status-filter">
+<option value="">All Statuses</option>
+<option value="new">New</option>
+<option value="attempted">Attempted</option>
+<option value="contacted">Contacted</option>
+<option value="under_contract">Under Contract</option>
+<option value="dead">Dead</option>
+</select>
+<select id="crm-category-filter">
+<option value="">All Categories</option>
+<option value="Divorce">Divorce</option>
+<option value="Senior">Senior</option>
+<option value="Eviction">Eviction</option>
+<option value="Bankruptcy">Bankruptcy</option>
+<option value="Utility">Utility</option>
+</select>
+<input id="crm-search" placeholder="Search owner or address">
+<button type="button" onclick="loadCRMLeads()">Refresh</button>
+</div>
+
+<table id="crm-table">
+<thead>
+<tr>
+<th>Category</th>
+<th>Owner</th>
+<th>Property</th>
+<th>Status</th>
+<th>Tags</th>
+<th>Next Follow-Up</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<!-- Dialer Workspace -->
+<div class="card-container" id="dialer-tab" style="display:none;">
+<h2>Dialer Workspace</h2>
+<p>Complete intake forms for motivated seller leads. Send qualified leads to closer.</p>
+<div id="dialer-error"></div>
+
+<div class="queue-filters">
+<button onclick="loadDialerQueue('new')">New</button>
+<button onclick="loadDialerQueue('follow-up')">Follow-Up</button>
+<button onclick="loadDialerQueue('hot')">Hot</button>
+<button onclick="loadDialerQueue('needs-missing-data')">Needs Missing Data</button>
+<button onclick="loadDialerQueue('escalated')">Escalated</button>
+<button onclick="loadDialerQueue()">All</button>
+</div>
+
+<div id="dialer-queue-container">
+<table id="dialer-queue-table">
+<thead>
+<tr>
+<th>Owner</th>
+<th>Property</th>
+<th>Status</th>
+<th>Motivation</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div id="dialer-lead-detail" style="display: none;">
+<div class="lead-detail">
+<h3>Lead Intake Form</h3>
+<div id="dialer-lead-error"></div>
+<div id="dialer-skip-trace-info"></div>
+<form id="dialer-intake-form">
+<div class="form-row">
+<div class="form-group">
+<label>Property Address <span class="required">*</span></label>
+<input type="text" id="intake-property-address" required>
+</div>
+<div class="form-group">
+<label>Occupancy Type <span class="required">*</span></label>
+<select id="intake-occupancy-type" required>
+<option value="">Select...</option>
+<option value="vacant">Vacant</option>
+<option value="owner">Owner</option>
+<option value="tenant">Tenant</option>
+<option value="unknown">Unknown</option>
+</select>
+</div>
+</div>
+
+<div class="form-row">
+<div class="form-group">
+<label>Condition Tier <span class="required">*</span></label>
+<select id="intake-condition-tier" required>
+<option value="">Select...</option>
+<option value="light">Light</option>
+<option value="medium">Medium</option>
+<option value="heavy">Heavy</option>
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="3">3</option>
+<option value="4">4</option>
+<option value="5">5</option>
+</select>
+</div>
+<div class="form-group">
+<label>Asking Price</label>
+<input type="number" id="intake-asking-price" placeholder="Unknown allowed">
+</div>
+</div>
+
+<div class="form-row">
+<div class="form-group">
+<label>Mortgage Free and Clear <span class="required">*</span></label>
+<select id="intake-mortgage-free" required>
+<option value="">Select...</option>
+<option value="yes">Yes</option>
+<option value="no">No</option>
+<option value="unknown">Unknown</option>
+</select>
+</div>
+<div class="form-group">
+<label>Mortgage Balance</label>
+<input type="number" id="intake-mortgage-balance" placeholder="Unknown allowed">
+</div>
+</div>
+
+<div class="form-row">
+<div class="form-group">
+<label>Mortgage Monthly Payment</label>
+<input type="number" id="intake-mortgage-payment" placeholder="Unknown allowed">
+</div>
+<div class="form-group">
+<label>Mortgage Current <span class="required">*</span></label>
+<select id="intake-mortgage-current" required>
+<option value="">Select...</option>
+<option value="yes">Yes</option>
+<option value="no">No</option>
+<option value="unknown">Unknown</option>
+</select>
+</div>
+</div>
+
+<div class="form-row">
+<div class="form-group">
+<label>Motivation Rating (1-5) <span class="required">*</span></label>
+<select id="intake-motivation-rating" required>
+<option value="">Select...</option>
+<option value="1">1 - Low</option>
+<option value="2">2</option>
+<option value="3">3</option>
+<option value="4">4</option>
+<option value="5">5 - High</option>
+</select>
+</div>
+<div class="form-group">
+<label>Timeline to Close <span class="required">*</span></label>
+<input type="text" id="intake-timeline" required placeholder="e.g., 30-60 days">
+</div>
+</div>
+
+<div class="form-group">
+<label>Seller Reason <span class="required">*</span></label>
+<input type="text" id="intake-seller-reason" required>
+</div>
+
+<div class="form-group">
+<label>Seller Flexibility <span class="required">*</span></label>
+<select id="intake-seller-flexibility" required>
+<option value="">Select...</option>
+<option value="price">Price</option>
+<option value="terms">Terms</option>
+<option value="both">Both</option>
+<option value="unknown">Unknown</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Red Flags (multi-select)</label>
+<div>
+<label><input type="checkbox" value="Property needs major repairs"> Property needs major repairs</label><br>
+<label><input type="checkbox" value="Title issues"> Title issues</label><br>
+<label><input type="checkbox" value="Liens on property"> Liens on property</label><br>
+<label><input type="checkbox" value="Tenant occupied"> Tenant occupied</label><br>
+<label><input type="checkbox" value="Other"> Other</label>
+</div>
+</div>
+
+<div class="form-row">
+<div class="form-group">
+<label>Dialer Confidence (1-5) <span class="required">*</span></label>
+<select id="intake-dialer-confidence" required>
+<option value="">Select...</option>
+<option value="1">1 - Low</option>
+<option value="2">2</option>
+<option value="3">3</option>
+<option value="4">4</option>
+<option value="5">5 - High</option>
+</select>
+</div>
+<div class="form-group">
+<label>Recommended Offer Lane</label>
+<select id="intake-offer-lane">
+<option value="">Select...</option>
+<option value="cash">Cash</option>
+<option value="subto">Subject-To</option>
+<option value="sellerfinance">Seller Finance</option>
+<option value="novation">Novation</option>
+<option value="leaseoption">Lease Option</option>
+<option value="unknown">Unknown</option>
+</select>
+</div>
+</div>
+
+<div class="form-group">
+<label>
+<input type="checkbox" id="intake-escalate"> Escalate (send to closer even if intake incomplete)
+</label>
+</div>
+
+<button type="submit">Save Intake</button>
+<button type="button" class="secondary" onclick="closeDialerDetail()">Cancel</button>
+<button type="button" class="success" id="send-to-closer-btn" onclick="sendToCloser()" disabled>Send to Closer</button>
+</form>
+</div>
+</div>
+</div>
+
+<!-- Closer Workspace -->
+<div class="card-container" id="closer-tab" style="display:none;">
+<h2>Closer Workspace</h2>
+<p>Review dialer handoffs, set offers, and manage deal progression.</p>
+<div id="closer-error"></div>
+
+<div class="queue-filters">
+<button onclick="loadCloserQueue('new')">New</button>
+<button onclick="loadCloserQueue('offer-sent')">Offer Sent</button>
+<button onclick="loadCloserQueue('contract-sent')">Contract Sent</button>
+<button onclick="loadCloserQueue()">All</button>
+</div>
+
+<div id="closer-queue-container">
+<table id="closer-queue-table">
+<thead>
+<tr>
+<th>Owner</th>
+<th>Property</th>
+<th>Status</th>
+<th>Offer Lane</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div id="closer-lead-detail" style="display: none;">
+<div class="lead-detail">
+<h3>Lead Review</h3>
+<div id="closer-lead-error"></div>
+<div id="closer-skip-trace-info"></div>
+
+<div id="closer-intake-readonly" class="field-group">
+<h4>Dialer Intake (Read-Only)</h4>
+<div id="closer-intake-fields"></div>
+</div>
+
+<form id="closer-offer-form">
+<h4>Offer Details</h4>
+<div class="form-group">
+<label>Offer Lane Final</label>
+<select id="closer-offer-lane">
+<option value="">Select...</option>
+<option value="cash">Cash</option>
+<option value="subto">Subject-To</option>
+<option value="sellerfinance">Seller Finance</option>
+<option value="novation">Novation</option>
+<option value="leaseoption">Lease Option</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Offer Terms Summary</label>
+<textarea id="closer-offer-terms" placeholder="e.g., Subject-to existing mortgage, $10k down, $500/month"></textarea>
+</div>
+
+<div class="form-group">
+<label>Offer Amount</label>
+<input type="number" id="closer-offer-amount" placeholder="Optional">
+</div>
+
+<div class="form-group">
+<label>Disposition</label>
+<select id="closer-disposition">
+<option value="">Select...</option>
+<option value="offer_sent">Offer Sent</option>
+<option value="negotiating">Negotiating</option>
+<option value="dead">Dead</option>
+<option value="follow-up">Follow-Up</option>
+</select>
+</div>
+
+<button type="submit">Save Offer</button>
+<button type="button" class="secondary" onclick="closeCloserDetail()">Cancel</button>
+<button type="button" class="warning" onclick="requestInfoFromDialer()">Request Missing Info</button>
+<button type="button" onclick="downloadLetter(currentCloserLeadId)">Download Letter</button>
+</form>
+
+<div id="closer-underwriting-section" style="margin-top: 2rem; padding-top: 1rem; border-top: 2px solid #ddd;">
+<h4>AI Deal Underwriting Assistant</h4>
+<div id="closer-underwriting-error"></div>
+<div id="closer-underwriting-compliance" style="background: #fff3cd; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; border-left: 4px solid #ffc107;">
+<strong>⚠️ Compliance Notice:</strong> Underwriting analysis is advisory only. All decisions must be made by licensed professionals. AI-generated content may contain assumptions and should be verified.
+</div>
+<div id="closer-underwriting-display" style="display: none; margin: 1rem 0; padding: 1rem; background: #f9f9f9; border-radius: 6px;">
+<div class="field-group">
+<div class="field-label"><strong>Summary:</strong></div>
+<div class="field-value" id="underwriting-summary"></div>
+</div>
+<div class="field-group">
+<div class="field-label"><strong>Suggested Lane:</strong></div>
+<div class="field-value" id="underwriting-lane"></div>
+</div>
+<div class="field-group">
+<div class="field-label"><strong>Suggested Price Range:</strong></div>
+<div class="field-value" id="underwriting-price-range"></div>
+</div>
+<div class="field-group">
+<div class="field-label"><strong>Assumptions:</strong></div>
+<div class="field-value" id="underwriting-assumptions"></div>
+</div>
+<div class="field-group">
+<div class="field-label"><strong>Missing Fields:</strong></div>
+<div class="field-value" id="underwriting-missing"></div>
+</div>
+<div class="field-group">
+<div class="field-label"><strong>Risks:</strong></div>
+<div class="field-value" id="underwriting-risks"></div>
+</div>
+<div class="field-group">
+<div class="field-label"><strong>Model Used:</strong></div>
+<div class="field-value" id="underwriting-model"></div>
+</div>
+</div>
+<div class="form-group">
+<label>
+<input type="checkbox" id="underwriting-use-ai"> Use AI Enhancement (requires OPENAI_API_KEY)
+</label>
+</div>
+<button type="button" class="success" onclick="runUnderwriting()">Underwrite Deal</button>
+<button type="button" class="secondary" onclick="editUnderwriting()" id="edit-underwriting-btn" style="display: none;">Edit Analysis</button>
+<div id="underwriting-edit-form" style="display: none; margin-top: 1rem; padding: 1rem; background: white; border: 1px solid #ddd; border-radius: 6px;">
+<div class="form-group">
+<label>Summary Text</label>
+<textarea id="edit-underwriting-summary" rows="3"></textarea>
+</div>
+<div class="form-group">
+<label>Suggested Lane</label>
+<select id="edit-underwriting-lane">
+<option value="">Select...</option>
+<option value="cash">Cash</option>
+<option value="subto">Subject-To</option>
+<option value="sellerfinance">Seller Finance</option>
+<option value="novation">Novation</option>
+<option value="leaseoption">Lease Option</option>
+<option value="unknown">Unknown</option>
+</select>
+</div>
+<div class="form-row">
+<div class="form-group">
+<label>Price Range Min</label>
+<input type="number" id="edit-underwriting-price-min">
+</div>
+<div class="form-group">
+<label>Price Range Max</label>
+<input type="number" id="edit-underwriting-price-max">
+</div>
+</div>
+<button type="button" class="success" onclick="saveUnderwritingEdits()">Save Edits</button>
+<button type="button" class="secondary" onclick="cancelUnderwritingEdit()">Cancel</button>
+</div>
+</div>
+
+<div id="closer-sms-blast-section" style="margin-top: 2rem; padding-top: 1rem; border-top: 2px solid #ddd;">
+<h4>SMS Buyer Blast</h4>
+<div id="closer-sms-blast-error"></div>
+<div id="closer-sms-blast-preview" style="margin: 1rem 0; padding: 1rem; background: #f9f9f9; border-radius: 6px; display: none;">
+<div class="field-group">
+<div class="field-label">Matched Buyers: <span id="sms-matched-count">0</span></div>
+<div class="field-label">Eligible SMS Buyers: <span id="sms-eligible-count">0</span></div>
+</div>
+</div>
+<div class="form-group">
+<label>
+<input type="radio" name="sms-mode" value="digest" checked> Daily Digest (default - sends at 9 AM CT)
+</label>
+<br>
+<label>
+<input type="radio" name="sms-mode" value="immediate"> Immediate Send
+</label>
+</div>
+<div class="form-group">
+<label>Threshold Score (default: 70)</label>
+<input type="number" id="sms-threshold-score" value="70" min="0" max="100" style="width: 100px;">
+</div>
+<div class="form-group">
+<label>Limit (default: 50)</label>
+<input type="number" id="sms-limit" value="50" min="1" max="100" style="width: 100px;">
+</div>
+<button type="button" class="success" onclick="previewSmsBlast()">Preview Buyers</button>
+<button type="button" class="success" onclick="sendSmsBlast()">Send SMS Blast</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Notifications Tab -->
+<div class="card-container" id="notifications-tab" style="display:none;">
+<h2>Notifications</h2>
+<div id="notifications-error"></div>
+<button onclick="markAllNotificationsRead()" class="secondary">Mark All Read</button>
+<div id="notifications-list" style="margin-top: 1rem;"></div>
+</div>
+
+<!-- Messages Tab -->
+<div class="card-container" id="messages-tab" style="display:none;">
+<h2>Messages</h2>
+<div id="messages-error"></div>
+<div class="messages-container">
+<div class="messages-thread-list" id="messages-thread-list"></div>
+<div class="messages-view" id="messages-view" style="display: none;">
+<div class="messages-header">
+<h3 id="messages-thread-title"></h3>
+</div>
+<div class="messages-list" id="messages-list"></div>
+<div class="message-send-box" id="message-send-box">
+<select id="message-channel">
+<option value="internal">Internal</option>
+<option value="sms">SMS</option>
+<option value="email">Email</option>
+</select>
+<textarea id="message-body" placeholder="Type your message..."></textarea>
+<button onclick="sendMessage()">Send</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Notification Drawer -->
+<div class="notification-drawer" id="notification-drawer">
+<div class="notification-drawer-header">
+<h3>Notifications</h3>
+<button onclick="toggleNotificationDrawer()" style="background: transparent; border: none; color: white; font-size: 1.5rem; cursor: pointer;">×</button>
+</div>
+<div id="notification-drawer-list"></div>
+</div>
+
+<!-- Templates Tab -->
+<div class="card-container" id="templates-tab" style="display:none;">
+<h2>Template Library</h2>
+<p>Manage dialer and closer templates with versioning and approval workflow.</p>
+<div id="templates-error"></div>
+
+<div class="queue-filters">
+<button onclick="loadTemplates('dialer')">Dialer Templates</button>
+<button onclick="loadTemplates('closer')">Closer Templates</button>
+<button onclick="loadTemplates()">All Templates</button>
+</div>
+
+<div id="templates-container">
+<div class="template-section" id="dialer-templates-section">
+<h3>Dialer Templates</h3>
+<div id="dialer-templates-list" class="template-list"></div>
+</div>
+
+<div class="template-section" id="closer-templates-section">
+<h3>Closer Templates</h3>
+<div id="closer-templates-list" class="template-list"></div>
+</div>
+</div>
+</div>
+
+<!-- Mobile Slider -->
+<div class="slider" id="mobile-slider">
+<div class="slide" id="slide-preforce"></div>
+<div class="slide" id="slide-tax"></div>
+<div class="slide" id="slide-code"></div>
+<div class="slide" id="slide-probate"></div>
+<div class="slide" id="slide-crm"></div>
+<div class="slide" id="slide-dialer"></div>
+<div class="slide" id="slide-closer"></div>
+<div class="slide" id="slide-templates"></div>
+<div class="slide" id="slide-notifications"></div>
+<div class="slide" id="slide-messages"></div>
+</div>
+
+<!-- Mobile Bottom Navigation -->
+<div class="mobile-bottom-nav" id="mobile-bottom-nav">
+<a class="mobile-bottom-nav-item" data-tab="dialer" onclick="switchMobileTab('dialer')">
+  📋 <span>Queue</span>
+</a>
+<a class="mobile-bottom-nav-item" data-tab="dialer" onclick="switchMobileTab('dialer')">
+  👤 <span>Lead</span>
+</a>
+<a class="mobile-bottom-nav-item" data-tab="dialer" onclick="switchMobileTab('dialer')">
+  📝 <span>Intake</span>
+</a>
+<a class="mobile-bottom-nav-item" data-tab="templates" onclick="switchMobileTab('templates')">
+  📄 <span>Templates</span>
+</a>
+<a class="mobile-bottom-nav-item" data-tab="messages" onclick="switchMobileTab('messages')">
+  💬 <span>Inbox</span>
+</a>
+</div>
+
+</main>
+
+<footer>&copy; 2025 EliteNexus.ai • All rights reserved</footer>
+
+<script>
+// ==== CONFIG ====
+// Auto-detect localhost vs production
+const API_BASE = window.location.hostname.includes("localhost")
+  ? "http://localhost:5000"  // Backend runs on 5000 for local development
+  : "https://elitenexus-backend-fly.fly.dev";
+
+let authToken = localStorage.getItem("elitenexus_token") || null;
+let currentUser = null;
+let currentTenant = null;
+let currentDialerLeadId = null;
+let currentCloserLeadId = null;
+let socket = null;
+let socketDisconnectedTime = null;
+let pollingInterval = null;
+
+// ==== STATUS INDICATORS ====
+async function checkAPIStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/`);
+    if (res.ok) {
+      updateAPIStatus(true);
+      return true;
+    } else {
+      updateAPIStatus(false);
+      return false;
+    }
+  } catch (err) {
+    updateAPIStatus(false);
+    return false;
+  }
+}
+
+function updateAPIStatus(connected) {
+  const indicator = document.getElementById("api-status-indicator");
+  const text = document.getElementById("api-status-text");
+  if (connected) {
+    indicator.className = "status-indicator connected";
+    text.textContent = `API: ${API_BASE}`;
+  } else {
+    indicator.className = "status-indicator disconnected";
+    text.textContent = "API: Disconnected";
+  }
+}
+
+function updateAuthStatus(authenticated, userName = null) {
+  const indicator = document.getElementById("auth-status-indicator");
+  const text = document.getElementById("auth-status-text");
+  if (authenticated) {
+    indicator.className = "status-indicator authenticated";
+    text.textContent = userName ? `Authenticated: ${userName}` : "Authenticated";
+  } else {
+    indicator.className = "status-indicator not-authenticated";
+    text.textContent = "Not authenticated";
+  }
+}
+
+// ==== AUTH HANDLING ====
+const loginForm = document.getElementById("login-form");
+const loginStatus = document.getElementById("login-status");
+const logoutBtn = document.getElementById("logout-btn");
+const authDebug = document.getElementById("auth-debug");
+
+function updateAuthUI() {
+  if (authToken && currentUser) {
+    loginForm.style.display = "none";
+    logoutBtn.style.display = "block";
+    loginStatus.textContent = `Welcome, ${currentUser.name}`;
+    loginStatus.style.color = "#c6ffc6";
+    updateAuthStatus(true, currentUser.name);
+    authDebug.textContent = `API: ${API_BASE} | Token: Present`;
+  } else {
+    loginForm.style.display = "flex";
+    logoutBtn.style.display = "none";
+    loginStatus.textContent = "";
+    updateAuthStatus(false);
+    authDebug.textContent = `API: ${API_BASE} | Token: None`;
+  }
+}
+
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.getElementById("login-email").value;
+  const password = document.getElementById("login-password").value;
+
+  loginStatus.textContent = "Logging in...";
+  loginStatus.style.color = "#fff";
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email, password })
+    });
+    
+    let data;
+    try {
+      data = await res.json();
+    } catch (e) {
+      throw new Error(`Invalid response from server. Check API_BASE (${API_BASE}) and backend status.`);
+    }
+    
+    if (!res.ok) {
+      throw new Error(data.error || data.message || `Login failed: ${res.status}`);
+    }
+
+    if (!data.user) {
+      throw new Error("Invalid response: missing user data");
+    }
+
+    authToken = data.token || null;
+    currentUser = data.user;
+    currentTenant = data.tenant || null;
+    localStorage.setItem("elitenexus_token", authToken);
+    updateAuthUI();
+    
+    // Apply tenant branding
+    if (currentTenant) {
+      applyTenantBranding(currentTenant);
+    }
+    
+    // Connect to Socket.IO
+    connectSocket();
+    
+    // Auto-load CRM if on CRM tab
+    const activeTab = document.querySelector(".tab-link.active");
+    if (activeTab && activeTab.dataset.tab === "crm") {
+      loadCRMLeads();
+    }
+    
+    loginStatus.textContent = "Login successful!";
+    loginStatus.style.color = "#c6ffc6";
+  } catch (err) {
+    loginStatus.textContent = `Login failed: ${err.message}`;
+    loginStatus.style.color = "#ffd1d1";
+    const errorMsg = err.message.includes("Failed to fetch") || err.message.includes("NetworkError")
+      ? `Network error: Cannot reach ${API_BASE}/api/auth/login. Check API_BASE (${API_BASE}) and backend status.`
+      : `Login failed: ${err.message}. Check API_BASE (${API_BASE}) and backend status.`;
+    showError("login-error", errorMsg);
+  }
+});
+
+async function handleLogout() {
+  try {
+    await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", credentials: "include" });
+  } catch (e) { /* ignore */ }
+  authToken = null;
+  currentUser = null;
+  currentTenant = null;
+  localStorage.removeItem("elitenexus_token");
+  updateAuthUI();
+
+  // Disconnect socket
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+  
+  // Clear polling
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+  
+  // Clear protected data
+  const crmTbody = document.querySelector("#crm-table tbody");
+  if (crmTbody) crmTbody.innerHTML = "<tr><td colspan='7'>Login required to view CRM.</td></tr>";
+  
+  // Clear dialer/closer data
+  const dialerTbody = document.querySelector("#dialer-queue-table tbody");
+  if (dialerTbody) dialerTbody.innerHTML = "";
+  const closerTbody = document.querySelector("#closer-queue-table tbody");
+  if (closerTbody) closerTbody.innerHTML = "";
+}
+
+// ==== SOCKET.IO CONNECTION ====
+function connectSocket() {
+  if (!authToken || socket) return;
+  
+  const socketUrl = API_BASE.replace('http://', 'ws://').replace('https://', 'wss://');
+  socket = io(socketUrl, {
+    auth: { token: authToken },
+    transports: ['websocket', 'polling']
+  });
+  
+  socket.on('connect', () => {
+    console.log('✅ Socket connected');
+    socketDisconnectedTime = null;
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+    updateSocketStatus(true);
+    
+    // Subscribe to lead rooms for currently viewed leads
+    if (currentDialerLeadId) {
+      socket.emit('subscribe:lead', currentDialerLeadId);
+    }
+    if (currentCloserLeadId) {
+      socket.emit('subscribe:lead', currentCloserLeadId);
+    }
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('❌ Socket disconnected');
+    socketDisconnectedTime = Date.now();
+    updateSocketStatus(false);
+    
+    // Fall back to polling after 10s
+    setTimeout(() => {
+      if (!socket || !socket.connected) {
+        startPollingFallback();
+      }
+    }, 10000);
+  });
+  
+  socket.on('connect_error', (err) => {
+    console.error('Socket connection error:', err);
+    updateSocketStatus(false);
+  });
+  
+  // Subscribe to real-time events
+  socket.on('lead:created', (data) => {
+    console.log('📥 Lead created:', data);
+    if (document.querySelector('.tab-link.active')?.dataset.tab === 'crm') {
+      loadCRMLeads();
+    }
+    if (document.querySelector('.tab-link.active')?.dataset.tab === 'dialer') {
+      loadDialerQueue();
+    }
+  });
+  
+  socket.on('lead:updated', (data) => {
+    console.log('📥 Lead updated:', data);
+    if (currentDialerLeadId === data.leadId || currentCloserLeadId === data.leadId) {
+      if (currentDialerLeadId) openDialerLead(currentDialerLeadId);
+      if (currentCloserLeadId) openCloserLead(currentCloserLeadId);
+    }
+    loadDialerQueue();
+    loadCloserQueue();
+  });
+  
+  socket.on('notification:created', (data) => {
+    console.log('📥 Notification:', data);
+    loadNotifications();
+    updateNotificationBadge((parseInt(document.getElementById('notification-badge')?.textContent || 0) + 1));
+  });
+  
+  socket.on('message:received', (data) => {
+    console.log('📥 Message received:', data);
+    if (currentThreadId === data.threadId) {
+      loadThread(data.threadId);
+    }
+    loadMessages();
+  });
+  
+  socket.on('underwriting:completed', (data) => {
+    console.log('📥 Underwriting completed:', data);
+    if (currentCloserLeadId === data.leadId) {
+      displayUnderwriting(data.underwriting);
+    }
+  });
+  
+  socket.on('underwriting:updated', (data) => {
+    console.log('📥 Underwriting updated:', data);
+    if (currentCloserLeadId === data.leadId) {
+      displayUnderwriting(data.underwriting);
+    }
+  });
+  
+  socket.on('skiptrace:completed', (data) => {
+    console.log('📥 Skip trace completed:', data);
+    if (currentDialerLeadId === data.leadId) {
+      openDialerLead(data.leadId);
+    }
+    if (currentCloserLeadId === data.leadId) {
+      openCloserLead(data.leadId);
+    }
+    // Show toast notification
+    showToast(`Skip trace completed: ${data.phonesCount || 0} phones, ${data.emailsCount || 0} emails found`);
+  });
+  
+  socket.on('buyer:interest', (data) => {
+    console.log('📥 Buyer interest:', data);
+    if (currentCloserLeadId === data.leadId) {
+      // Reload lead to show updated buyer interest
+      openCloserLead(data.leadId);
+    }
+    // Show toast notification
+    showToast(`New buyer interest received for lead`);
+  });
+  
+  socket.on('handoff:created', (data) => {
+    console.log('📥 Handoff created:', data);
+    // Reload queues when handoff is created
+    loadDialerQueue();
+    loadCloserQueue();
+    if (currentCloserLeadId === data.leadId) {
+      openCloserLead(data.leadId);
+    }
+    // Show toast notification
+    showToast(`New handoff received: ${data.lead?.ownerName || 'Lead'} - ${data.lead?.propertyAddress || ''}`);
+  });
+}
+
+// Subscribe to lead room when viewing a lead
+function subscribeToLead(leadId) {
+  if (socket && socket.connected && leadId) {
+    socket.emit('subscribe:lead', leadId);
+  }
+}
+
+// Simple toast notification helper
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position: fixed; top: 20px; right: 20px; background: var(--secondary-color); color: white; padding: 1rem; border-radius: 6px; z-index: 10000; box-shadow: 0 4px 12px rgba(0,0,0,0.2);';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
+}
+
+function updateSocketStatus(connected) {
+  // Update status banner if needed
+  const statusBanner = document.getElementById('status-banner');
+  if (statusBanner) {
+    const socketStatus = statusBanner.querySelector('.socket-status');
+    if (!socketStatus) {
+      const socketItem = document.createElement('div');
+      socketItem.className = 'status-item';
+      socketItem.innerHTML = `
+        <span class="status-indicator ${connected ? 'connected' : 'disconnected'}" id="socket-status-indicator"></span>
+        <span id="socket-status-text">Socket: ${connected ? 'Connected' : 'Disconnected'}</span>
+      `;
+      statusBanner.appendChild(socketItem);
+    } else {
+      socketStatus.querySelector('#socket-status-indicator').className = `status-indicator ${connected ? 'connected' : 'disconnected'}`;
+      socketStatus.querySelector('#socket-status-text').textContent = `Socket: ${connected ? 'Connected' : 'Disconnected'}`;
+    }
+  }
+}
+
+function startPollingFallback() {
+  if (pollingInterval) return;
+  console.log('🔄 Starting polling fallback (30s interval)');
+  pollingInterval = setInterval(() => {
+    if (socket && socket.connected) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+      return;
+    }
+    // Poll for updates
+    if (document.querySelector('.tab-link.active')?.dataset.tab === 'notifications') {
+      loadNotifications();
+    }
+    if (document.querySelector('.tab-link.active')?.dataset.tab === 'messages') {
+      loadMessages();
+    }
+  }, 30000);
+}
+
+function applyTenantBranding(tenant) {
+  if (!tenant) return;
+  
+  // Update CSS variables
+  document.documentElement.style.setProperty('--primary-color', tenant.primaryColor || '#0b1d51');
+  document.documentElement.style.setProperty('--secondary-color', tenant.secondaryColor || '#ff6f00');
+  
+  // Update header title
+  const headerTitle = document.querySelector('header h1');
+  if (headerTitle) {
+    headerTitle.textContent = tenant.brandName || tenant.name || 'EliteNexus Dashboard';
+  }
+  
+  // Update page title
+  document.title = `${tenant.brandName || tenant.name} - Dashboard`;
+  
+  // Update logo if provided
+  if (tenant.logoUrl) {
+    // Could add logo image here if needed
+  }
+}
+
+function switchMobileTab(tabName) {
+  const tabLink = document.querySelector(`.tab-link[data-tab="${tabName}"]`);
+  if (tabLink) {
+    tabLink.click();
+  }
+  
+  // Update mobile nav active state
+  document.querySelectorAll('.mobile-bottom-nav-item').forEach(item => {
+    item.classList.remove('active');
+    if (item.dataset.tab === tabName) {
+      item.classList.add('active');
+    }
+  });
+}
+
+// ==== FETCH HELPERS ====
+async function fetchJSON(path, options = {}) {
+  const headers = { ...options.headers };
+  
+  // Auto-attach auth token for protected endpoints
+  const protectedPaths = ['/api/crm', '/api/rapid-offer', '/api/templates', '/api/letter'];
+  const isProtected = protectedPaths.some(p => path.startsWith(p));
+  
+  if (isProtected && authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+  
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
+    let data;
+    try {
+      data = await res.json();
+    } catch (e) {
+      throw new Error("Failed to parse JSON response");
+    }
+    
+    if (res.status === 401) {
+      // Session expired
+      handleLogout();
+      throw new Error("Session expired, please login again");
+    }
+    
+    if (res.status === 403) {
+      // Insufficient permissions
+      throw new Error(data.error || data.message || "Insufficient permissions. Your role may not have access to this endpoint.");
+    }
+    
+    if (!res.ok) {
+      throw new Error(data.error || data.message || `Request failed: ${res.status}`);
+    }
+    
+    return data;
+  } catch (err) {
+    if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
+      throw new Error(`Network error: Cannot reach ${API_BASE}${path}. Check API_BASE and backend status.`);
+    }
+    throw err;
+  }
+}
+
+async function fetchAuthJSON(path, options = {}) {
+  if (!authToken) {
+    throw new Error("Authentication required");
+  }
+  return fetchJSON(path, {
+    ...options,
+    headers: {
+      ...options.headers,
+      Authorization: `Bearer ${authToken}`
+    }
+  });
+}
+
+// ==== ERROR HANDLING ====
+function showError(containerId, message) {
+  const container = document.getElementById(containerId);
+  if (container) {
+    container.innerHTML = `<div class="error-message">${message}</div>`;
+  }
+}
+
+function clearError(containerId) {
+  const container = document.getElementById(containerId);
+  if (container) {
+    container.innerHTML = "";
+  }
+}
+
+// ==== DATA LOADERS FOR MAIN TABS ====
+async function loadPreforeclosures() {
+  const tbody = document.querySelector("#preforce-table tbody");
+  clearError("preforce-error");
+  tbody.innerHTML = "<tr><td colspan='4'>Loading...</td></tr>";
+  try {
+    const rows = await fetchJSON("/api/preforeclosures");
+    tbody.innerHTML = "";
+    if (rows.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='4'>No data available</td></tr>";
+    } else {
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.ownerName || ""}</td>
+          <td>${r.propertyAddress || ""}</td>
+          <td>${r.amountDelinquent || ""}</td>
+          <td>${r.auctionDate || ""}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan='4'>Error: ${e.message}</td></tr>`;
+    showError("preforce-error", `Failed to load pre-foreclosures: ${e.message}`);
+  }
+}
+
+async function loadTaxLiens() {
+  const tbody = document.querySelector("#tax-table tbody");
+  clearError("tax-error");
+  tbody.innerHTML = "<tr><td colspan='4'>Loading...</td></tr>";
+  try {
+    const rows = await fetchJSON("/api/taxliens");
+    tbody.innerHTML = "";
+    if (rows.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='4'>No data available</td></tr>";
+    } else {
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.ownerName || ""}</td>
+          <td>${r.propertyAddress || ""}</td>
+          <td>${r.delinquentAmount || ""}</td>
+          <td>${r.yearsOwed || ""}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan='4'>Error: ${e.message}</td></tr>`;
+    showError("tax-error", `Failed to load tax liens from /api/taxliens: ${e.message}. Check API_BASE (${API_BASE}) and backend status.`);
+  }
+}
+
+async function loadCodeViolations() {
+  const tbody = document.querySelector("#code-table tbody");
+  clearError("code-error");
+  tbody.innerHTML = "<tr><td colspan='3'>Loading...</td></tr>";
+  try {
+    const rows = await fetchJSON("/api/codeviolations");
+    tbody.innerHTML = "";
+    if (rows.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='3'>No data available</td></tr>";
+    } else {
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.ownerName || ""}</td>
+          <td>${r.propertyAddress || ""}</td>
+          <td>${r.violationType || ""}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan='3'>Error: ${e.message}</td></tr>`;
+    showError("code-error", `Failed to load code violations from /api/codeviolations: ${e.message}. Check API_BASE (${API_BASE}) and backend status.`);
+  }
+}
+
+async function loadProbate() {
+  const tbody = document.querySelector("#probate-table tbody");
+  clearError("probate-error");
+  tbody.innerHTML = "<tr><td colspan='4'>Loading...</td></tr>";
+  try {
+    const rows = await fetchJSON("/api/probate");
+    tbody.innerHTML = "";
+    if (rows.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='4'>No data available</td></tr>";
+    } else {
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.executorName || ""}</td>
+          <td>${r.attorneyName || ""}</td>
+          <td>${r.estateAddress || ""}</td>
+          <td>${r.caseNumber || ""}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan='4'>Error: ${e.message}</td></tr>`;
+    showError("probate-error", `Failed to load probate from /api/probate: ${e.message}. Check API_BASE (${API_BASE}) and backend status.`);
+  }
+}
+
+// ==== CSV EXPORT ====
+function exportCSV(type) {
+  let endpoint = "";
+  if (type === "preforce") endpoint = "/api/preforeclosures/export";
+  if (type === "tax") endpoint = "/api/taxliens/export";
+  if (type === "code") endpoint = "/api/codeviolations/export";
+  if (type === "probate") endpoint = "/api/probate/export";
+  if (!endpoint) return;
+  window.location.href = `${API_BASE}${endpoint}`;
+}
+
+// ==== CRM LOAD & ACTIONS ====
+async function loadCRMLeads() {
+  const tbody = document.querySelector("#crm-table tbody");
+  clearError("crm-error");
+
+  if (!authToken) {
+    tbody.innerHTML = "<tr><td colspan='7'>Login required to view CRM.</td></tr>";
+    return;
+  }
+
+  const status = document.getElementById("crm-status-filter").value;
+  const category = document.getElementById("crm-category-filter").value;
+  const q = document.getElementById("crm-search").value;
+
+  const params = new URLSearchParams();
+  if (status) params.append("status", status);
+  if (category) params.append("category", category);
+  if (q) params.append("q", q);
+
+  tbody.innerHTML = "<tr><td colspan='7'>Loading...</td></tr>";
+
+  try {
+    const rows = await fetchAuthJSON(`/api/crm/leads?${params.toString()}`);
+    tbody.innerHTML = "";
+    if (rows.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='7'>No leads found</td></tr>";
+    } else {
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        const tags = (r.tags || []).join(", ");
+        const nextFollowUp = r.nextFollowUp ? new Date(r.nextFollowUp).toLocaleDateString() : "";
+        tr.innerHTML = `
+          <td>${r.category || ""}</td>
+          <td>${r.ownerName || ""}</td>
+          <td>${r.propertyAddress || ""}</td>
+          <td>${r.status || ""}</td>
+          <td>${tags}</td>
+          <td>${nextFollowUp}</td>
+          <td>
+            <button onclick="quickStatus('${r._id}', 'contacted')">Mark Contacted</button>
+            <button onclick="downloadLetter('${r._id}')">Letter</button>
+            <button onclick="runSkipTrace('${r._id}')">Skip Trace</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan='7'>Error: ${e.message}</td></tr>`;
+    showError("crm-error", `Failed to load CRM leads from /api/crm/leads: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+}
+
+async function quickStatus(id, status) {
+  if (!authToken) return;
+  try {
+    await fetchAuthJSON(`/api/crm/leads/${id}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status })
+    });
+    loadCRMLeads();
+  } catch (e) {
+    alert(`Failed to update status: ${e.message}`);
+  }
+}
+
+function downloadLetter(id) {
+  if (!authToken) {
+    alert("Login required");
+    return;
+  }
+  window.location.href = `${API_BASE}/api/letter/${id}`;
+}
+
+async function runSkipTrace(id) {
+  if (!authToken) {
+    alert("Please login first");
+    return;
+  }
+
+  // Disable button while running
+  const button = event?.target || document.querySelector(`button[onclick*="runSkipTrace('${id}')"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Running...";
+  }
+
+  try {
+    const response = await fetchAuthJSON(`/api/skiptrace/${id}`, {
+      method: 'POST'
+    });
+
+    if (response.lead) {
+      alert(`Skip trace completed!\nStatus: ${response.lead.skipTraceStatus || response.lead.skipTrace?.status}\nPhones found: ${response.lead.phones?.length || response.lead.skipTrace?.phones?.length || 0}\nEmails found: ${response.lead.emails?.length || response.lead.skipTrace?.emails?.length || 0}`);
+      
+      // Reload current view if applicable
+      if (currentDialerLeadId === id) {
+        openDialerLead(id);
+      } else if (currentCloserLeadId === id) {
+        openCloserLead(id);
+      } else {
+        loadCRMLeads(); // Reload CRM table
+      }
+    } else {
+      alert("Skip trace completed");
+    }
+  } catch (error) {
+    console.error("Skip trace error:", error);
+    alert(`Skip trace failed: ${error.message || "Unknown error"}`);
+  } finally {
+    // Re-enable button
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Skip Trace";
+    }
+  }
+}
+
+// ==== DIALER WORKSPACE ====
+async function loadDialerQueue(filter = "") {
+  const tbody = document.querySelector("#dialer-queue-table tbody");
+  clearError("dialer-error");
+
+  if (!authToken) {
+    tbody.innerHTML = "<tr><td colspan='5'>Login required</td></tr>";
+    return;
+  }
+
+  tbody.innerHTML = "<tr><td colspan='5'>Loading...</td></tr>";
+
+  try {
+    const params = filter ? `?filter=${filter}` : "";
+    const leads = await fetchAuthJSON(`/api/rapid-offer/dialer/queue${params}`);
+    tbody.innerHTML = "";
+    if (leads.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='5'>No leads in queue</td></tr>";
+    } else {
+      leads.forEach(lead => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${lead.ownerName || ""}</td>
+          <td>${lead.propertyAddress || ""}</td>
+          <td>${lead.status || ""}</td>
+          <td>${lead.dialerIntake?.motivationRating || "N/A"}</td>
+          <td><button onclick="openDialerLead('${lead._id}')">View/Edit</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan='5'>Error: ${e.message}</td></tr>`;
+    showError("dialer-error", `Failed to load dialer queue from /api/rapid-offer/dialer/queue: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+}
+
+async function openDialerLead(leadId) {
+  currentDialerLeadId = leadId;
+  clearError("dialer-lead-error");
+  document.getElementById("dialer-lead-detail").style.display = "block";
+  
+  // Subscribe to lead room for real-time updates
+  subscribeToLead(leadId);
+
+  try {
+    const response = await fetchAuthJSON(`/api/rapid-offer/dialer/leads/${leadId}`);
+    // Backend returns { lead, templates, complianceData, skipTraceStatus }
+    const lead = response.lead || response; // Support both structures
+    const skipTraceStatus = response.skipTraceStatus || lead.skipTraceStatus || {};
+    
+    // Display skip trace info (dialers see limited info)
+    const skipTraceInfo = document.getElementById("dialer-skip-trace-info");
+    if (skipTraceInfo) {
+      const hasData = (skipTraceStatus.phonesCount || 0) > 0 || (skipTraceStatus.emailsCount || 0) > 0;
+      const status = skipTraceStatus.status || lead.skipTrace?.status || 'not_requested';
+      const statusText = status === 'completed' ? 'Completed' : 
+                        status === 'no_data' ? 'No data found' :
+                        status === 'pending' ? 'Running...' : 'Not requested';
+      
+      skipTraceInfo.innerHTML = `
+        <div class="field-group">
+          <h4>Contact Information</h4>
+          <div class="field-label">Status: <span style="color: ${status === 'completed' ? 'green' : status === 'no_data' ? 'orange' : 'gray'}">${statusText}</span></div>
+          ${hasData ? `
+            <div class="field-value">Phones: ${skipTraceStatus.phonesCount || 0} | Emails: ${skipTraceStatus.emailsCount || 0}</div>
+          ` : `
+            <div class="field-value">No contact data available</div>
+            <button onclick="runSkipTrace('${leadId}')" ${status === 'pending' ? 'disabled' : ''}>
+              ${status === 'pending' ? 'Running...' : 'Run Skip Trace'}
+            </button>
+          `}
+        </div>
+      `;
+    }
+    
+    // Populate form with existing intake data
+    // Backend returns lead.dialerIntake, not lead.intake
+    const intake = lead.dialerIntake || lead.intake; // Support both for compatibility
+    if (intake) {
+      document.getElementById("intake-property-address").value = intake.propertyAddress || "";
+      document.getElementById("intake-occupancy-type").value = intake.occupancyType || "";
+      document.getElementById("intake-condition-tier").value = intake.conditionTier || "";
+      document.getElementById("intake-asking-price").value = intake.askingPrice || "";
+      document.getElementById("intake-mortgage-free").value = intake.mortgageFreeAndClear || "";
+      document.getElementById("intake-mortgage-balance").value = intake.mortgageBalance || "";
+      document.getElementById("intake-mortgage-payment").value = intake.mortgageMonthlyPayment || "";
+      document.getElementById("intake-mortgage-current").value = intake.mortgageCurrent || "";
+      document.getElementById("intake-motivation-rating").value = intake.motivationRating || "";
+      document.getElementById("intake-timeline").value = intake.timelineToClose || "";
+      document.getElementById("intake-seller-reason").value = intake.sellerReason || "";
+      document.getElementById("intake-seller-flexibility").value = intake.sellerFlexibility || "";
+      document.getElementById("intake-dialer-confidence").value = intake.dialerConfidence || "";
+      document.getElementById("intake-offer-lane").value = intake.recommendedOfferLane || "";
+      
+      // Red flags checkboxes
+      const redFlags = intake.redFlags || [];
+      document.querySelectorAll("#dialer-intake-form input[type='checkbox']").forEach(cb => {
+        cb.checked = redFlags.includes(cb.value);
+      });
+    }
+    
+    checkIntakeComplete();
+    
+    // Try to restore draft if no intake data exists
+    if (!intake) {
+      const restored = restoreIntakeDraft(leadId);
+      if (restored) {
+        const errorContainer = document.getElementById("dialer-lead-error");
+        errorContainer.innerHTML = `<div class="success-message">Restored draft from previous session</div>`;
+      }
+    }
+  } catch (e) {
+    showError("dialer-lead-error", `Failed to load lead from /api/rapid-offer/dialer/leads/${leadId}: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+}
+
+function closeDialerDetail() {
+  document.getElementById("dialer-lead-detail").style.display = "none";
+  currentDialerLeadId = null;
+  document.getElementById("dialer-intake-form").reset();
+}
+
+// Autosave intake form to localStorage
+function autosaveIntake() {
+  if (!currentDialerLeadId) return;
+  
+  const formData = {
+    propertyAddress: document.getElementById("intake-property-address").value,
+    occupancyType: document.getElementById("intake-occupancy-type").value,
+    conditionTier: document.getElementById("intake-condition-tier").value,
+    askingPrice: document.getElementById("intake-asking-price").value,
+    mortgageFreeAndClear: document.getElementById("intake-mortgage-free").value,
+    mortgageBalance: document.getElementById("intake-mortgage-balance").value,
+    mortgageMonthlyPayment: document.getElementById("intake-mortgage-payment").value,
+    mortgageCurrent: document.getElementById("intake-mortgage-current").value,
+    motivationRating: document.getElementById("intake-motivation-rating").value,
+    timelineToClose: document.getElementById("intake-timeline").value,
+    sellerReason: document.getElementById("intake-seller-reason").value,
+    sellerFlexibility: document.getElementById("intake-seller-flexibility").value,
+    redFlags: Array.from(document.querySelectorAll("#dialer-intake-form input[type='checkbox']:checked")).map(cb => cb.value),
+    dialerConfidence: document.getElementById("intake-dialer-confidence").value,
+    recommendedOfferLane: document.getElementById("intake-offer-lane").value
+  };
+  
+  localStorage.setItem(`intake_draft_${currentDialerLeadId}`, JSON.stringify(formData));
+  localStorage.setItem(`intake_draft_${currentDialerLeadId}_timestamp`, Date.now().toString());
+}
+
+// Restore intake form from localStorage
+function restoreIntakeDraft(leadId) {
+  const draft = localStorage.getItem(`intake_draft_${leadId}`);
+  if (!draft) return false;
+  
+  try {
+    const formData = JSON.parse(draft);
+    document.getElementById("intake-property-address").value = formData.propertyAddress || "";
+    document.getElementById("intake-occupancy-type").value = formData.occupancyType || "";
+    document.getElementById("intake-condition-tier").value = formData.conditionTier || "";
+    document.getElementById("intake-asking-price").value = formData.askingPrice || "";
+    document.getElementById("intake-mortgage-free").value = formData.mortgageFreeAndClear || "";
+    document.getElementById("intake-mortgage-balance").value = formData.mortgageBalance || "";
+    document.getElementById("intake-mortgage-payment").value = formData.mortgageMonthlyPayment || "";
+    document.getElementById("intake-mortgage-current").value = formData.mortgageCurrent || "";
+    document.getElementById("intake-motivation-rating").value = formData.motivationRating || "";
+    document.getElementById("intake-timeline").value = formData.timelineToClose || "";
+    document.getElementById("intake-seller-reason").value = formData.sellerReason || "";
+    document.getElementById("intake-seller-flexibility").value = formData.sellerFlexibility || "";
+    document.getElementById("intake-dialer-confidence").value = formData.dialerConfidence || "";
+    document.getElementById("intake-offer-lane").value = formData.recommendedOfferLane || "";
+    
+    // Restore checkboxes
+    document.querySelectorAll("#dialer-intake-form input[type='checkbox']").forEach(cb => {
+      cb.checked = (formData.redFlags || []).includes(cb.value);
+    });
+    
+    return true;
+  } catch (e) {
+    console.error('Failed to restore intake draft:', e);
+    return false;
+  }
+}
+
+// Add autosave listeners
+["intake-property-address", "intake-occupancy-type", "intake-condition-tier", 
+ "intake-asking-price", "intake-mortgage-free", "intake-mortgage-balance",
+ "intake-mortgage-payment", "intake-mortgage-current", "intake-motivation-rating",
+ "intake-timeline", "intake-seller-reason", "intake-seller-flexibility",
+ "intake-dialer-confidence", "intake-offer-lane"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener('input', () => {
+      setTimeout(autosaveIntake, 500); // Debounce
+    });
+    el.addEventListener('change', autosaveIntake);
+  }
+});
+
+document.querySelectorAll("#dialer-intake-form input[type='checkbox']").forEach(cb => {
+  cb.addEventListener('change', autosaveIntake);
+});
+
+document.getElementById("dialer-intake-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!currentDialerLeadId) return;
+
+  const formData = {
+    propertyAddress: document.getElementById("intake-property-address").value,
+    occupancyType: document.getElementById("intake-occupancy-type").value,
+    conditionTier: document.getElementById("intake-condition-tier").value,
+    askingPrice: document.getElementById("intake-asking-price").value || null,
+    mortgageFreeAndClear: document.getElementById("intake-mortgage-free").value,
+    mortgageBalance: document.getElementById("intake-mortgage-balance").value || null,
+    mortgageMonthlyPayment: document.getElementById("intake-mortgage-payment").value || null,
+    mortgageCurrent: document.getElementById("intake-mortgage-current").value,
+    motivationRating: parseInt(document.getElementById("intake-motivation-rating").value),
+    timelineToClose: document.getElementById("intake-timeline").value,
+    sellerReason: document.getElementById("intake-seller-reason").value,
+    sellerFlexibility: document.getElementById("intake-seller-flexibility").value,
+    redFlags: Array.from(document.querySelectorAll("#dialer-intake-form input[type='checkbox']:checked")).map(cb => cb.value),
+    dialerConfidence: parseInt(document.getElementById("intake-dialer-confidence").value),
+    recommendedOfferLane: document.getElementById("intake-offer-lane").value || "unknown"
+  };
+
+  clearError("dialer-lead-error");
+
+  try {
+    await fetchAuthJSON(`/api/rapid-offer/dialer/leads/${currentDialerLeadId}/intake`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formData)
+    });
+    
+    // Clear draft from localStorage
+    localStorage.removeItem(`intake_draft_${currentDialerLeadId}`);
+    localStorage.removeItem(`intake_draft_${currentDialerLeadId}_timestamp`);
+    
+    // Show success
+    const errorContainer = document.getElementById("dialer-lead-error");
+    errorContainer.innerHTML = `<div class="success-message">Intake saved successfully</div>`;
+    
+    checkIntakeComplete();
+    loadDialerQueue();
+  } catch (e) {
+    showError("dialer-lead-error", `Failed to save intake to /api/rapid-offer/dialer/leads/${currentDialerLeadId}/intake: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+});
+
+function checkIntakeComplete() {
+  const required = [
+    "intake-property-address",
+    "intake-occupancy-type",
+    "intake-condition-tier",
+    "intake-mortgage-free",
+    "intake-mortgage-current",
+    "intake-motivation-rating",
+    "intake-timeline",
+    "intake-seller-reason",
+    "intake-seller-flexibility",
+    "intake-dialer-confidence"
+  ];
+  
+  const allFilled = required.every(id => {
+    const el = document.getElementById(id);
+    return el && el.value.trim() !== "";
+  });
+  
+  const escalate = document.getElementById("intake-escalate").checked;
+  const sendBtn = document.getElementById("send-to-closer-btn");
+  sendBtn.disabled = !(allFilled || escalate);
+}
+
+// Add change listeners to required fields
+["intake-property-address", "intake-occupancy-type", "intake-condition-tier", 
+ "intake-mortgage-free", "intake-mortgage-current", "intake-motivation-rating",
+ "intake-timeline", "intake-seller-reason", "intake-seller-flexibility", 
+ "intake-dialer-confidence", "intake-escalate"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener("change", checkIntakeComplete);
+    el.addEventListener("input", checkIntakeComplete);
+  }
+});
+
+async function sendToCloser() {
+  if (!currentDialerLeadId) return;
+  
+  const escalate = document.getElementById("intake-escalate").checked;
+  clearError("dialer-lead-error");
+
+  try {
+    const body = escalate ? { escalate: "high_priority" } : {};
+    await fetchAuthJSON(`/api/rapid-offer/dialer/leads/${currentDialerLeadId}/send-to-closer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    
+    const errorContainer = document.getElementById("dialer-lead-error");
+    errorContainer.innerHTML = `<div class="success-message">Lead sent to closer successfully</div>`;
+    
+    setTimeout(() => {
+      closeDialerDetail();
+      loadDialerQueue();
+    }, 1500);
+  } catch (e) {
+    showError("dialer-lead-error", `Failed to send to closer via /api/rapid-offer/dialer/leads/${currentDialerLeadId}/send-to-closer: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+}
+
+// ==== CLOSER WORKSPACE ====
+async function loadCloserQueue(filter = "") {
+  const tbody = document.querySelector("#closer-queue-table tbody");
+  clearError("closer-error");
+
+  if (!authToken) {
+    tbody.innerHTML = "<tr><td colspan='5'>Login required</td></tr>";
+    return;
+  }
+
+  tbody.innerHTML = "<tr><td colspan='5'>Loading...</td></tr>";
+
+  try {
+    const params = filter ? `?filter=${filter}` : "";
+    const leads = await fetchAuthJSON(`/api/rapid-offer/closer/queue${params}`);
+    tbody.innerHTML = "";
+    if (leads.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='5'>No leads in queue</td></tr>";
+    } else {
+      leads.forEach(lead => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${lead.ownerName || ""}</td>
+          <td>${lead.propertyAddress || ""}</td>
+          <td>${lead.status || ""}</td>
+          <td>${lead.closer?.offerLaneFinal || lead.offer?.offerLaneFinal || ""}</td>
+          <td><button onclick="openCloserLead('${lead._id}')">View/Edit</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan='5'>Error: ${e.message}</td></tr>`;
+    showError("closer-error", `Failed to load closer queue from /api/rapid-offer/closer/queue: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+}
+
+async function openCloserLead(leadId) {
+  currentCloserLeadId = leadId;
+  clearError("closer-lead-error");
+  document.getElementById("closer-lead-detail").style.display = "block";
+  
+  // Subscribe to lead room for real-time updates
+  subscribeToLead(leadId);
+
+  try {
+    const response = await fetchAuthJSON(`/api/rapid-offer/closer/leads/${leadId}`);
+    // Backend returns { lead, templates, skipTraceData, scoreBreakdown, routingBreakdown }
+    const lead = response.lead || response; // Support both structures
+    const skipTraceData = response.skipTraceData || lead.skipTrace || {};
+    
+    // Display underwriting if available
+    if (lead.underwriting) {
+      displayUnderwriting(lead.underwriting);
+    } else {
+      document.getElementById("closer-underwriting-display").style.display = "none";
+      document.getElementById("edit-underwriting-btn").style.display = "none";
+    }
+    
+    // Display skip trace info (closers see full data)
+    const skipTraceInfo = document.getElementById("closer-skip-trace-info");
+    if (skipTraceInfo) {
+      const phones = skipTraceData.phones || [];
+      const emails = skipTraceData.emails || [];
+      const status = skipTraceData.status || 'not_requested';
+      const statusText = status === 'completed' ? 'Completed' : 
+                        status === 'no_data' ? 'No data found' :
+                        status === 'pending' ? 'Running...' : 'Not requested';
+      
+      skipTraceInfo.innerHTML = `
+        <div class="field-group">
+          <h4>Skip Trace Information</h4>
+          <div class="field-label">Status: <span style="color: ${status === 'completed' ? 'green' : status === 'no_data' ? 'orange' : 'gray'}">${statusText}</span></div>
+          ${phones.length > 0 ? `
+            <div class="field-label">Phone Numbers:</div>
+            <div class="field-value">
+              ${phones.map(p => `<div>${p.number || p} (${p.type || 'unknown'})</div>`).join('')}
+            </div>
+          ` : ''}
+          ${emails.length > 0 ? `
+            <div class="field-label">Email Addresses:</div>
+            <div class="field-value">
+              ${emails.map(e => `<div>${e.email || e}</div>`).join('')}
+            </div>
+          ` : ''}
+          ${phones.length === 0 && emails.length === 0 ? `
+            <div class="field-value">No contact data available</div>
+            <button onclick="runSkipTrace('${leadId}')" ${status === 'pending' ? 'disabled' : ''}>
+              ${status === 'pending' ? 'Running...' : 'Run Skip Trace'}
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }
+    
+    // Display intake (read-only)
+    // Backend returns lead.dialerIntake, not lead.intake
+    const intakeFields = document.getElementById("closer-intake-fields");
+    const intake = lead.dialerIntake || lead.intake; // Support both for compatibility
+    if (intake) {
+      intakeFields.innerHTML = `
+        <div class="field-group">
+          <div class="field-label">Property Address</div>
+          <div class="field-value read-only">${intake.propertyAddress || "N/A"}</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Occupancy Type</div>
+          <div class="field-value read-only">${intake.occupancyType || "N/A"}</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Condition Tier</div>
+          <div class="field-value read-only">${intake.conditionTier || "N/A"}</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Motivation Rating</div>
+          <div class="field-value read-only">${intake.motivationRating || "N/A"}</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Seller Reason</div>
+          <div class="field-value read-only">${intake.sellerReason || "N/A"}</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Recommended Offer Lane</div>
+          <div class="field-value read-only">${intake.recommendedOfferLane || "N/A"}</div>
+        </div>
+      `;
+    }
+    
+    // Populate offer form
+    // Backend returns lead.closer, not lead.offer
+    const offer = lead.closer || lead.offer; // Support both for compatibility
+    if (offer) {
+      document.getElementById("closer-offer-lane").value = offer.offerLaneFinal || "";
+      document.getElementById("closer-offer-terms").value = offer.offerTermsSummary || "";
+      document.getElementById("closer-offer-amount").value = offer.offerAmount || "";
+      document.getElementById("closer-disposition").value = offer.disposition || "";
+    }
+  } catch (e) {
+    showError("closer-lead-error", `Failed to load lead from /api/rapid-offer/closer/leads/${leadId}: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+}
+
+function closeCloserDetail() {
+  document.getElementById("closer-lead-detail").style.display = "none";
+  currentCloserLeadId = null;
+  document.getElementById("closer-offer-form").reset();
+}
+
+document.getElementById("closer-offer-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!currentCloserLeadId) return;
+
+  const formData = {
+    offerLaneFinal: document.getElementById("closer-offer-lane").value || null,
+    offerTermsSummary: document.getElementById("closer-offer-terms").value || null,
+    offerAmount: document.getElementById("closer-offer-amount").value ? parseFloat(document.getElementById("closer-offer-amount").value) : null,
+    disposition: document.getElementById("closer-disposition").value || null
+  };
+
+  clearError("closer-lead-error");
+
+  try {
+    await fetchAuthJSON(`/api/rapid-offer/closer/leads/${currentCloserLeadId}/offer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formData)
+    });
+    
+    const errorContainer = document.getElementById("closer-lead-error");
+    errorContainer.innerHTML = `<div class="success-message">Offer saved successfully</div>`;
+    
+    loadCloserQueue();
+  } catch (e) {
+    showError("closer-lead-error", `Failed to save offer to /api/rapid-offer/closer/leads/${currentCloserLeadId}/offer: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+});
+
+async function requestInfoFromDialer() {
+  if (!currentCloserLeadId) return;
+  
+  const fields = prompt("Enter comma-separated list of fields needed (e.g., mortgageBalance, sellerReason):");
+  if (!fields) return;
+  
+  const note = prompt("Enter note for dialer:");
+  
+  clearError("closer-lead-error");
+
+  try {
+    await fetchAuthJSON(`/api/rapid-offer/closer/leads/${currentCloserLeadId}/request-info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requestedFields: fields.split(",").map(f => f.trim()),
+        note: note || ""
+      })
+    });
+    
+    const errorContainer = document.getElementById("closer-lead-error");
+    errorContainer.innerHTML = `<div class="success-message">Info request sent to dialer</div>`;
+    
+    loadCloserQueue();
+  } catch (e) {
+    showError("closer-lead-error", `Failed to request info via /api/rapid-offer/closer/leads/${currentCloserLeadId}/request-info: ${e.message}. Check API_BASE (${API_BASE}), authentication token, and backend status.`);
+  }
+}
+
+// ==== SMS BLAST ====
+async function previewSmsBlast() {
+  if (!currentCloserLeadId) {
+    alert("Please select a lead first");
+    return;
+  }
+  
+  clearError("closer-sms-blast-error");
+  const previewDiv = document.getElementById("closer-sms-blast-preview");
+  previewDiv.style.display = "none";
+  
+  const thresholdScore = parseInt(document.getElementById("sms-threshold-score").value) || 70;
+  
+  try {
+    const response = await fetchAuthJSON(`/api/buyer-blast/${currentCloserLeadId}/preview?thresholdScore=${thresholdScore}`);
+    
+    document.getElementById("sms-matched-count").textContent = response.summary.totalMatched;
+    document.getElementById("sms-eligible-count").textContent = response.summary.eligible;
+    previewDiv.style.display = "block";
+  } catch (e) {
+    showError("closer-sms-blast-error", `Failed to preview SMS blast: ${e.message}`);
+  }
+}
+
+async function sendSmsBlast() {
+  if (!currentCloserLeadId) {
+    alert("Please select a lead first");
+    return;
+  }
+  
+  if (!confirm("Send SMS blast to matched buyers?")) {
+    return;
+  }
+  
+  clearError("closer-sms-blast-error");
+  
+  const mode = document.querySelector('input[name="sms-mode"]:checked').value;
+  const thresholdScore = parseInt(document.getElementById("sms-threshold-score").value) || 70;
+  const limit = parseInt(document.getElementById("sms-limit").value) || 50;
+  
+  try {
+    const response = await fetchAuthJSON(`/api/buyer-blast/${currentCloserLeadId}/sms`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode,
+        thresholdScore,
+        limit
+      })
+    });
+    
+    const errorContainer = document.getElementById("closer-sms-blast-error");
+    
+    if (mode === 'immediate') {
+      errorContainer.innerHTML = `<div class="success-message">
+        SMS Blast sent!<br>
+        Sent: ${response.summary.sent} | Failed: ${response.summary.failed}<br>
+        Eligible: ${response.summary.eligible} | Matched: ${response.summary.matched}
+      </div>`;
+    } else {
+      errorContainer.innerHTML = `<div class="success-message">
+        Queued for Daily Digest!<br>
+        ${response.message}<br>
+        Queued: ${response.summary.queued} | Skipped: ${response.summary.skipped}<br>
+        Eligible: ${response.summary.eligible} | Matched: ${response.summary.matched}
+      </div>`;
+    }
+    
+    // Refresh preview
+    await previewSmsBlast();
+  } catch (e) {
+    showError("closer-sms-blast-error", `Failed to send SMS blast: ${e.message}`);
+  }
+}
+
+// ==== TEMPLATE LIBRARY ====
+async function loadTemplates(roleScope = "") {
+  clearError("templates-error");
+  
+  if (!authToken) {
+    document.getElementById("dialer-templates-list").innerHTML = "<p>Login required</p>";
+    document.getElementById("closer-templates-list").innerHTML = "<p>Login required</p>";
+    return;
+  }
+
+  try {
+    // Support both 'group' (legacy) and 'roleScope' parameter names
+    const params = roleScope ? `?roleScope=${roleScope}` : "";
+    const templates = await fetchAuthJSON(`/api/templates${params}`);
+    
+    const dialerTemplates = templates.filter(t => t.roleScope === "dialer" || t.roleScope === "both");
+    const closerTemplates = templates.filter(t => t.roleScope === "closer" || t.roleScope === "both");
+    
+    renderTemplates("dialer-templates-list", dialerTemplates);
+    renderTemplates("closer-templates-list", closerTemplates);
+  } catch (e) {
+    showError("templates-error", `Failed to load templates from /api/templates: ${e.message}. Check API_BASE and authentication.`);
+  }
+}
+
+function renderTemplates(containerId, templates) {
+  const container = document.getElementById(containerId);
+  if (templates.length === 0) {
+    container.innerHTML = "<p>No templates available</p>";
+    return;
+  }
+  
+  container.innerHTML = templates.map(t => `
+    <div class="template-card">
+      <h4>${t.title || t.key}</h4>
+      <div class="template-meta">
+        <span class="template-status ${t.status}">${t.status}</span>
+        <span>Version ${t.version || 1}</span>
+        <span>• ${t.type || "N/A"}</span>
+      </div>
+      <div class="template-content">${escapeHtml(t.content || "").substring(0, 200)}${(t.content || "").length > 200 ? "..." : ""}</div>
+      <div class="template-actions">
+        <button onclick="copyTemplate('${t._id}')">Copy</button>
+        ${currentUser && (currentUser.role === "admin" || currentUser.role === "manager") ? `
+          ${t.status === "draft" ? `<button onclick="approveTemplate('${t._id}')">Approve</button>` : ""}
+          ${t.status === "approved" ? `<button onclick="activateTemplate('${t._id}')">Activate</button>` : ""}
+        ` : ""}
+      </div>
+    </div>
+  `).join("");
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function copyTemplate(templateId) {
+  try {
+    const template = await fetchAuthJSON(`/api/templates/${templateId}`);
+    navigator.clipboard.writeText(template.content || "");
+    alert("Template copied to clipboard");
+  } catch (e) {
+    alert(`Failed to copy template: ${e.message}`);
+  }
+}
+
+async function approveTemplate(templateId) {
+  if (!confirm("Approve this template?")) return;
+  try {
+    await fetchAuthJSON(`/api/templates/${templateId}/approve`, { method: "POST" });
+    loadTemplates();
+  } catch (e) {
+    alert(`Failed to approve template: ${e.message}`);
+  }
+}
+
+async function activateTemplate(templateId) {
+  if (!confirm("Activate this template? This will archive the current active version.")) return;
+  try {
+    await fetchAuthJSON(`/api/templates/${templateId}/activate`, { method: "POST" });
+    loadTemplates();
+  } catch (e) {
+    alert(`Failed to activate template: ${e.message}`);
+  }
+}
+
+// ==== NOTIFICATIONS ====
+let notificationsPollInterval = null;
+
+async function loadNotifications() {
+  try {
+    const response = await fetchAuthJSON('/api/notifications');
+    const container = document.getElementById('notifications-list');
+    if (container) {
+      renderNotifications(response.notifications || [], response.unreadCount || 0, container);
+    }
+    const drawerContainer = document.getElementById('notification-drawer-list');
+    if (drawerContainer) {
+      renderNotifications(response.notifications || [], response.unreadCount || 0, drawerContainer);
+    }
+    updateNotificationBadge(response.unreadCount || 0);
+  } catch (e) {
+    showError('notifications-error', `Failed to load notifications: ${e.message}`);
+  }
+}
+
+function renderNotifications(notifications, unreadCount, container) {
+  if (notifications.length === 0) {
+    container.innerHTML = '<p style="padding: 1rem;">No notifications</p>';
+    return;
+  }
+  
+  container.innerHTML = notifications.map(n => `
+    <div class="notification-item ${n.read ? '' : 'unread'} priority-${n.priority}" onclick="handleNotificationClick('${n._id}', '${n.entityType}', '${n.entityId}')">
+      <div style="font-weight: 600;">${escapeHtml(n.title)}</div>
+      <div style="font-size: 0.9rem; color: #666; margin-top: 0.25rem;">${escapeHtml(n.message)}</div>
+      <div style="font-size: 0.8rem; color: #999; margin-top: 0.5rem;">${new Date(n.createdAt).toLocaleString()}</div>
+    </div>
+  `).join('');
+}
+
+async function handleNotificationClick(notificationId, entityType, entityId) {
+  try {
+    await fetchAuthJSON(`/api/notifications/mark-read/${notificationId}`, { method: 'POST' });
+    loadNotifications();
+  } catch (e) {
+    console.error('Failed to mark notification as read:', e);
+  }
+  if (entityType === 'lead' && entityId) {
+    console.log('Navigate to lead:', entityId);
+  }
+}
+
+async function markAllNotificationsRead() {
+  try {
+    await fetchAuthJSON('/api/notifications/mark-all-read', { method: 'POST' });
+    loadNotifications();
+  } catch (e) {
+    alert(`Failed to mark all as read: ${e.message}`);
+  }
+}
+
+function updateNotificationBadge(count) {
+  const badge = document.getElementById('notification-badge');
+  if (badge) {
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : count;
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+}
+
+function toggleNotificationDrawer() {
+  const drawer = document.getElementById('notification-drawer');
+  if (drawer) {
+    drawer.classList.toggle('open');
+    if (drawer.classList.contains('open')) {
+      loadNotifications();
+    }
+  }
+}
+
+function startNotificationPolling() {
+  if (notificationsPollInterval) clearInterval(notificationsPollInterval);
+  notificationsPollInterval = setInterval(() => {
+    const notificationsTab = document.getElementById('notifications-tab');
+    const drawer = document.getElementById('notification-drawer');
+    if ((notificationsTab && notificationsTab.style.display !== 'none') || 
+        (drawer && drawer.classList.contains('open'))) {
+      loadNotifications();
+    } else {
+      fetchAuthJSON('/api/notifications?limit=1').then(response => {
+        updateNotificationBadge(response.unreadCount || 0);
+      }).catch(() => {});
+    }
+  }, 30000);
+}
+
+// ==== MESSAGES ====
+let currentThreadId = null;
+
+async function loadMessages() {
+  try {
+    const threads = await fetchAuthJSON('/api/messages/threads');
+    renderThreadList(threads);
+  } catch (e) {
+    showError('messages-error', `Failed to load messages: ${e.message}`);
+  }
+}
+
+function renderThreadList(threads) {
+  const container = document.getElementById('messages-thread-list');
+  if (!container) return;
+  
+  if (threads.length === 0) {
+    container.innerHTML = '<p style="padding: 1rem;">No message threads</p>';
+    return;
+  }
+  
+  container.innerHTML = threads.map(t => `
+    <div class="messages-thread-item ${t.unread ? 'unread' : ''}" onclick="loadThread('${t._id}')" data-thread-id="${t._id}">
+      <div style="font-weight: 600;">${t.relatedLeadId ? escapeHtml(t.relatedLeadId.propertyAddress || 'Lead') : 
+        t.relatedBuyerId ? escapeHtml(t.relatedBuyerId.name || 'Buyer') : 'Conversation'}</div>
+      <div style="font-size: 0.85rem; color: #666; margin-top: 0.25rem;">
+        ${t.lastMessage ? escapeHtml(t.lastMessage.body.substring(0, 50)) : 'No messages'}
+      </div>
+      <div style="font-size: 0.75rem; color: #999; margin-top: 0.25rem;">
+        ${t.lastMessage ? new Date(t.lastMessage.createdAt).toLocaleString() : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadThread(threadId) {
+  currentThreadId = threadId;
+  try {
+    const response = await fetchAuthJSON(`/api/messages/threads/${threadId}`);
+    renderThreadMessages(response);
+    const view = document.getElementById('messages-view');
+    if (view) view.style.display = 'flex';
+    
+    document.querySelectorAll('.messages-thread-item').forEach(el => {
+      el.classList.remove('active');
+      if (el.dataset.threadId === threadId) {
+        el.classList.add('active');
+      }
+    });
+  } catch (e) {
+    alert(`Failed to load thread: ${e.message}`);
+  }
+}
+
+function renderThreadMessages(response) {
+  const { thread, messages } = response;
+  
+  const titleEl = document.getElementById('messages-thread-title');
+  if (titleEl) {
+    titleEl.textContent = thread.relatedLeadId ? `Lead: ${thread.relatedLeadId.propertyAddress || 'Unknown'}` :
+      thread.relatedBuyerId ? `Buyer: ${thread.relatedBuyerId.name || 'Unknown'}` : 'Conversation';
+  }
+  
+  const container = document.getElementById('messages-list');
+  if (!container) return;
+  
+  container.innerHTML = messages.map(m => `
+    <div class="message-item ${m.senderId ? 'outbound' : 'inbound'}">
+      <div style="font-weight: 600; font-size: 0.85rem;">
+        ${m.senderId ? (m.senderId.name || m.senderRole) : 'Buyer'}
+        <span style="font-weight: normal; color: #999; margin-left: 0.5rem; font-size: 0.75rem;">
+          ${new Date(m.createdAt).toLocaleString()}
+        </span>
+      </div>
+      <div style="margin-top: 0.5rem;">${escapeHtml(m.body)}</div>
+      ${m.channel !== 'internal' ? `<div style="font-size: 0.75rem; color: #999; margin-top: 0.25rem;">via ${m.channel.toUpperCase()}</div>` : ''}
+    </div>
+  `).join('');
+  
+  container.scrollTop = container.scrollHeight;
+  
+  const sendBox = document.getElementById('message-send-box');
+  if (sendBox) {
+    sendBox.dataset.threadId = thread._id;
+    sendBox.dataset.relatedLeadId = thread.relatedLeadId?._id || '';
+    sendBox.dataset.relatedBuyerId = thread.relatedBuyerId?._id || '';
+  }
+}
+
+async function sendMessage() {
+  const sendBox = document.getElementById('message-send-box');
+  if (!sendBox) return;
+  
+  const threadId = sendBox.dataset.threadId;
+  const bodyEl = document.getElementById('message-body');
+  const channelEl = document.getElementById('message-channel');
+  
+  if (!bodyEl || !channelEl) return;
+  
+  const body = bodyEl.value.trim();
+  const channel = channelEl.value;
+  
+  if (!body) {
+    alert('Please enter a message');
+    return;
+  }
+  
+  try {
+    const relatedLeadId = sendBox.dataset.relatedLeadId;
+    const relatedBuyerId = sendBox.dataset.relatedBuyerId;
+    
+    const response = await fetchAuthJSON('/api/messages/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        threadId: threadId || undefined,
+        relatedLeadId: relatedLeadId || undefined,
+        relatedBuyerId: relatedBuyerId || undefined,
+        body,
+        channel
+      })
+    });
+    
+    bodyEl.value = '';
+    
+    if (response.thread._id) {
+      loadThread(response.thread._id);
+    } else {
+      loadMessages();
+    }
+  } catch (e) {
+    alert(`Failed to send message: ${e.message}`);
+  }
+}
+
+// ==== TAB SWITCHING ====
+const tabs = document.querySelectorAll(".tab-link");
+tabs.forEach(tab => {
+  tab.addEventListener("click", () => {
+    tabs.forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+
+    document.querySelectorAll("[id$='-tab']").forEach(c => c.style.display = "none");
+    const selected = tab.dataset.tab;
+    document.getElementById(selected + "-tab").style.display = "block";
+
+    if (selected === "preforce") loadPreforeclosures();
+    if (selected === "tax") loadTaxLiens();
+    if (selected === "code") loadCodeViolations();
+    if (selected === "probate") loadProbate();
+    if (selected === "crm") loadCRMLeads();
+    if (selected === "dialer") loadDialerQueue();
+    if (selected === "closer") loadCloserQueue();
+    if (selected === "templates") loadTemplates();
+    if (selected === "notifications") loadNotifications();
+    if (selected === "messages") loadMessages();
+
+    updateSliderIndexByTab(selected);
+  });
+});
+
+// ==== MOBILE SLIDER ====
+const slider = document.getElementById("mobile-slider");
+const slides = document.querySelectorAll(".slide");
+let currentIndex = 0;
+
+function syncSlidesContent() {
+  document.getElementById("slide-preforce").innerHTML = document.getElementById("preforce-tab").innerHTML;
+  document.getElementById("slide-tax").innerHTML = document.getElementById("tax-tab").innerHTML;
+  document.getElementById("slide-code").innerHTML = document.getElementById("code-tab").innerHTML;
+  document.getElementById("slide-probate").innerHTML = document.getElementById("probate-tab").innerHTML;
+  document.getElementById("slide-crm").innerHTML = document.getElementById("crm-tab").innerHTML;
+  document.getElementById("slide-dialer").innerHTML = document.getElementById("dialer-tab").innerHTML;
+  document.getElementById("slide-closer").innerHTML = document.getElementById("closer-tab").innerHTML;
+  document.getElementById("slide-templates").innerHTML = document.getElementById("templates-tab").innerHTML;
+  document.getElementById("slide-notifications").innerHTML = document.getElementById("notifications-tab").innerHTML;
+  document.getElementById("slide-messages").innerHTML = document.getElementById("messages-tab").innerHTML;
+}
+
+function updateSlides() {
+  slides.forEach((s) => {
+    s.style.transform = `translateX(-${currentIndex * 100}%)`;
+  });
+}
+
+function updateSliderIndexByTab(tabKey) {
+  const order = ["preforce", "tax", "code", "probate", "crm", "dialer", "closer", "templates", "notifications", "messages"];
+  const idx = order.indexOf(tabKey);
+  if (idx >= 0) {
+    currentIndex = idx;
+    updateSlides();
+  }
+}
+
+let startX = 0;
+slider.addEventListener("touchstart", e => { startX = e.touches[0].clientX; });
+slider.addEventListener("touchend", e => {
+  let endX = e.changedTouches[0].clientX;
+  if (endX - startX > 50 && currentIndex > 0) currentIndex--;
+  if (startX - endX > 50 && currentIndex < slides.length - 1) currentIndex++;
+  updateSlides();
+  tabs.forEach(t => t.classList.remove("active"));
+  tabs[currentIndex].classList.add("active");
+});
+
+// ==== UNDERWRITING FUNCTIONS ====
+async function runUnderwriting() {
+  if (!currentCloserLeadId) {
+    alert("Please select a lead first");
+    return;
+  }
+  
+  clearError("closer-underwriting-error");
+  const useAI = document.getElementById("underwriting-use-ai").checked;
+  
+  try {
+    const response = await fetchAuthJSON(`/api/underwrite/${currentCloserLeadId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ useAI })
+    });
+    
+    displayUnderwriting(response.underwriting);
+    document.getElementById("edit-underwriting-btn").style.display = "inline-block";
+  } catch (e) {
+    showError("closer-underwriting-error", `Failed to run underwriting: ${e.message}`);
+  }
+}
+
+function displayUnderwriting(underwriting) {
+  if (!underwriting) return;
+  
+  document.getElementById("underwriting-summary").textContent = underwriting.summaryText || "N/A";
+  document.getElementById("underwriting-lane").textContent = underwriting.suggestedLane || "N/A";
+  document.getElementById("underwriting-price-range").textContent = 
+    (underwriting.suggestedPriceRange?.min && underwriting.suggestedPriceRange?.max)
+      ? `$${underwriting.suggestedPriceRange.min.toLocaleString()} - $${underwriting.suggestedPriceRange.max.toLocaleString()}`
+      : "N/A";
+  document.getElementById("underwriting-assumptions").innerHTML = 
+    (underwriting.assumptions || []).length > 0
+      ? `<ul>${underwriting.assumptions.map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ul>`
+      : "None";
+  document.getElementById("underwriting-missing").innerHTML = 
+    (underwriting.missingFields || []).length > 0
+      ? `<ul>${underwriting.missingFields.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul>`
+      : "None";
+  document.getElementById("underwriting-risks").innerHTML = 
+    (underwriting.risks || []).length > 0
+      ? `<ul>${underwriting.risks.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>`
+      : "None";
+  document.getElementById("underwriting-model").textContent = underwriting.model || "N/A";
+  
+  document.getElementById("closer-underwriting-display").style.display = "block";
+}
+
+function editUnderwriting() {
+  const display = document.getElementById("closer-underwriting-display");
+  const editForm = document.getElementById("underwriting-edit-form");
+  
+  if (display && display.style.display !== "none") {
+    const underwriting = {
+      summaryText: document.getElementById("underwriting-summary").textContent,
+      suggestedLane: document.getElementById("underwriting-lane").textContent,
+      suggestedPriceRange: {
+        min: null,
+        max: null
+      }
+    };
+    
+    // Parse price range if available
+    const priceRangeText = document.getElementById("underwriting-price-range").textContent;
+    if (priceRangeText !== "N/A") {
+      const match = priceRangeText.match(/\$([\d,]+)\s*-\s*\$([\d,]+)/);
+      if (match) {
+        underwriting.suggestedPriceRange.min = parseInt(match[1].replace(/,/g, ''));
+        underwriting.suggestedPriceRange.max = parseInt(match[2].replace(/,/g, ''));
+      }
+    }
+    
+    document.getElementById("edit-underwriting-summary").value = underwriting.summaryText;
+    document.getElementById("edit-underwriting-lane").value = underwriting.suggestedLane;
+    document.getElementById("edit-underwriting-price-min").value = underwriting.suggestedPriceRange.min || "";
+    document.getElementById("edit-underwriting-price-max").value = underwriting.suggestedPriceRange.max || "";
+    
+    editForm.style.display = "block";
+  }
+}
+
+async function saveUnderwritingEdits() {
+  if (!currentCloserLeadId) return;
+  
+  clearError("closer-underwriting-error");
+  
+  const updates = {
+    summaryText: document.getElementById("edit-underwriting-summary").value,
+    suggestedLane: document.getElementById("edit-underwriting-lane").value,
+    suggestedPriceRange: {
+      min: document.getElementById("edit-underwriting-price-min").value ? 
+        parseInt(document.getElementById("edit-underwriting-price-min").value) : null,
+      max: document.getElementById("edit-underwriting-price-max").value ? 
+        parseInt(document.getElementById("edit-underwriting-price-max").value) : null
+    }
+  };
+  
+  try {
+    const response = await fetchAuthJSON(`/api/underwrite/${currentCloserLeadId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates)
+    });
+    
+    displayUnderwriting(response.underwriting);
+    document.getElementById("underwriting-edit-form").style.display = "none";
+  } catch (e) {
+    showError("closer-underwriting-error", `Failed to save underwriting: ${e.message}`);
+  }
+}
+
+function cancelUnderwritingEdit() {
+  document.getElementById("underwriting-edit-form").style.display = "none";
+}
+
+// ==== INITIAL LOAD ====
+(async function init() {
+  startNotificationPolling();
+  await checkAPIStatus();
+
+  if (authToken) {
+    updateAuthUI();
+    connectSocket();
+    try {
+      const tenantResponse = await fetchAuthJSON('/api/tenant/me');
+      currentTenant = tenantResponse;
+      applyTenantBranding(currentTenant);
+    } catch (e) {
+      console.warn('Could not fetch tenant info:', e);
+    }
+  } else {
+    try {
+      const meRes = await fetch(`${API_BASE}/api/auth/me`, { credentials: "include" });
+      if (meRes.ok) {
+        const data = await meRes.json();
+        currentUser = data.user;
+        currentTenant = data.tenant || null;
+        if (data.token) {
+          authToken = data.token;
+          localStorage.setItem("elitenexus_token", authToken);
+        }
+        updateAuthUI();
+        applyTenantBranding(currentTenant);
+        connectSocket();
+      }
+    } catch (e) { /* no session */ }
+    if (!currentUser) updateAuthUI();
+  }
+  
+  // Load initial data
+  await loadPreforeclosures();
+  await loadTaxLiens();
+  await loadCodeViolations();
+  await loadProbate();
+  syncSlidesContent();
+  updateSlides();
+})();
+</script>
+
+</body>
+</html>
