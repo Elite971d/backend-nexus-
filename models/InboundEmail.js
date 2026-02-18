@@ -15,6 +15,8 @@ const inboundEmailSchema = new mongoose.Schema(
       index: true
     },
     from: { type: String, trim: true },
+    senderEmail: { type: String, lowercase: true, trim: true },
+    senderName: { type: String, trim: true, maxlength: 200 },
     to: [{ type: String, trim: true }],
     subject: { type: String, trim: true },
     bodySnippet: { type: String },

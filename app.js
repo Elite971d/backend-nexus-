@@ -78,6 +78,9 @@ app.use('/api/crm', require('./routes/crmRoutes'));
 app.use('/api/deals', require('./src/routes/deals'));
 app.use('/api/activity', require('./src/routes/activity'));
 
+// Inbound email (webhook: X-INBOUND-SECRET, no JWT)
+app.use('/api/inbound', require('./src/routes/inboundEmail'));
+
 // Exports
 app.use('/api', require('./routes/exportRoutes'));
 
