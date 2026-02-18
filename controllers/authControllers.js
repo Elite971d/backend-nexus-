@@ -63,7 +63,7 @@ exports.requestLink = async (req, res, next) => {
       await LoginToken.create({ tokenHash, userId: user._id, expiresAt });
 
       const baseUrl = process.env.APP_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`;
-      const loginLink = `${baseUrl.replace(/\/$/, '')}/api/auth/verify?token=${rawToken}`;
+      const loginLink = `${baseUrl.replace(/\/$/, '')}/?token=${rawToken}`;
       const deviceInfo = req.get('user-agent') || 'Unknown';
       const ip = req.ip || req.connection?.remoteAddress || '';
 

@@ -582,9 +582,8 @@ font-size: 0.9rem;
 
 <div class="auth-bar">
 <form id="login-form" style="display: flex; gap: 0.4rem; align-items: center;">
-<input type="email" id="login-email" placeholder="Email" required>
-<input type="password" id="login-password" placeholder="Password" required>
-<button type="submit">Login</button>
+<input type="email" id="login-email" placeholder="Email" required autocomplete="email">
+<button type="submit">Send login link</button>
 </form>
 <span id="login-status"></span>
 <button id="logout-btn" class="logout" style="display: none;" onclick="handleLogout()">Logout</button>
@@ -1192,10 +1191,16 @@ font-size: 0.9rem;
 
 <script>
 // ==== CONFIG ====
-// Auto-detect localhost vs production
-const API_BASE = window.location.hostname.includes("localhost")
-  ? "http://localhost:5000"  // Backend runs on 5000 for local development
-  : "https://elitenexus-backend-fly.fly.dev";
+// Auto-detect localhost vs production (backend default port 8080)
+function getAPIBase() {
+  const host = window.location.hostname || "localhost";
+  const isLocal = host === "localhost" || host === "127.0.0.1" || host === "";
+  if (isLocal) {
+    return `${window.location.protocol}//${host || "localhost"}:8080`;
+  }
+  return "https://elitenexus-backend-fly.fly.dev";
+}
+const API_BASE = getAPIBase();
 
 let authToken = localStorage.getItem("elitenexus_token") || null;
 let currentUser = null;
@@ -1272,63 +1277,38 @@ function updateAuthUI() {
 
 loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const email = document.getElementById("login-email").value;
-  const password = document.getElementById("login-password").value;
+  const email = document.getElementById("login-email").value.trim();
 
-  loginStatus.textContent = "Logging in...";
+  loginStatus.textContent = "Sending login link...";
   loginStatus.style.color = "#fff";
 
   try {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
+    const res = await fetch(`${API_BASE}/api/auth/request-link`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email })
     });
-    
+
     let data;
     try {
       data = await res.json();
     } catch (e) {
       throw new Error(`Invalid response from server. Check API_BASE (${API_BASE}) and backend status.`);
     }
-    
+
     if (!res.ok) {
-      throw new Error(data.error || data.message || `Login failed: ${res.status}`);
+      throw new Error(data.error || data.message || `Request failed: ${res.status}`);
     }
 
-    if (!data.user) {
-      throw new Error("Invalid response: missing user data");
-    }
-
-    authToken = data.token || null;
-    currentUser = data.user;
-    currentTenant = data.tenant || null;
-    localStorage.setItem("elitenexus_token", authToken);
-    updateAuthUI();
-    
-    // Apply tenant branding
-    if (currentTenant) {
-      applyTenantBranding(currentTenant);
-    }
-    
-    // Connect to Socket.IO
-    connectSocket();
-    
-    // Auto-load CRM if on CRM tab
-    const activeTab = document.querySelector(".tab-link.active");
-    if (activeTab && activeTab.dataset.tab === "crm") {
-      loadCRMLeads();
-    }
-    
-    loginStatus.textContent = "Login successful!";
+    loginStatus.textContent = data.message || "Check your email for the login link.";
     loginStatus.style.color = "#c6ffc6";
   } catch (err) {
-    loginStatus.textContent = `Login failed: ${err.message}`;
+    loginStatus.textContent = `Failed: ${err.message}`;
     loginStatus.style.color = "#ffd1d1";
     const errorMsg = err.message.includes("Failed to fetch") || err.message.includes("NetworkError")
-      ? `Network error: Cannot reach ${API_BASE}/api/auth/login. Check API_BASE (${API_BASE}) and backend status.`
-      : `Login failed: ${err.message}. Check API_BASE (${API_BASE}) and backend status.`;
+      ? `Network error: Cannot reach ${API_BASE}/api/auth/request-link. Check API_BASE (${API_BASE}) and backend status.`
+      : err.message;
     showError("login-error", errorMsg);
   }
 });
@@ -2995,12 +2975,41 @@ function cancelUnderwritingEdit() {
   document.getElementById("underwriting-edit-form").style.display = "none";
 }
 
+// Exchange magic-link token from URL for session (cookie + user)
+async function exchangeMagicLinkToken(token) {
+  const res = await fetch(`${API_BASE}/api/auth/verify?token=${encodeURIComponent(token)}`, { credentials: "include" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Invalid or expired link");
+  }
+  const data = await res.json();
+  currentUser = data.user;
+  currentTenant = data.tenant || null;
+  authToken = data.token || null;
+  if (authToken) localStorage.setItem("elitenexus_token", authToken);
+  updateAuthUI();
+  applyTenantBranding(currentTenant);
+  connectSocket();
+}
+
 // ==== INITIAL LOAD ====
 (async function init() {
   startNotificationPolling();
   await checkAPIStatus();
 
-  if (authToken) {
+  const urlParams = new URLSearchParams(window.location.search);
+  const magicToken = urlParams.get("token");
+  if (magicToken) {
+    try {
+      await exchangeMagicLinkToken(magicToken);
+      window.history.replaceState({}, document.title, window.location.pathname || "/");
+    } catch (e) {
+      console.error("Magic link failed:", e);
+      showError("login-error", e.message);
+    }
+  }
+
+  if (authToken && currentUser) {
     updateAuthUI();
     connectSocket();
     try {
@@ -3010,7 +3019,7 @@ function cancelUnderwritingEdit() {
     } catch (e) {
       console.warn('Could not fetch tenant info:', e);
     }
-  } else {
+  } else if (!magicToken) {
     try {
       const meRes = await fetch(`${API_BASE}/api/auth/me`, { credentials: "include" });
       if (meRes.ok) {
@@ -3028,7 +3037,7 @@ function cancelUnderwritingEdit() {
     } catch (e) { /* no session */ }
     if (!currentUser) updateAuthUI();
   }
-  
+
   // Load initial data
   await loadPreforeclosures();
   await loadTaxLiens();

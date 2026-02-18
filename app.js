@@ -36,25 +36,31 @@ const corsOrigin = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
   : isProd
     ? ['https://nexus.elitesolutionsnetwork.com']
-    : ['https://nexus.elitesolutionsnetwork.com', 'http://localhost:3000', 'http://localhost:5000', 'http://127.0.0.1:5000'];
+    : ['https://nexus.elitesolutionsnetwork.com', 'http://localhost:3000', 'http://localhost:5000', 'http://localhost:8080', 'http://127.0.0.1:5000', 'http://127.0.0.1:8080'];
 app.use(cors({ origin: corsOrigin, credentials: true }));
 
 // ---- RATE LIMITING ----
 app.use('/api', globalLimiter);
 
-// ---- STATIC (frontend) - serve from /public if present ----
+// ---- STATIC (frontend) - serve from /public if present, else serve index.html from root ----
 const publicDir = path.join(__dirname, 'public');
+const indexHtmlPath = path.join(__dirname, 'index.html');
 if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir));
 }
 
-// ---- ROOT ----
+// ---- ROOT: dashboard (HTML) or API info (JSON) ----
 app.get('/', (req, res) => {
-  res.json({
-    message: '🚀 EliteNexus Backend Running...',
-    version: packageJson.version,
-    environment: process.env.NODE_ENV || 'development',
-  });
+  const wantsHtml = req.accepts('html') === 'html';
+  if (wantsHtml && fs.existsSync(indexHtmlPath)) {
+    res.sendFile(indexHtmlPath);
+  } else {
+    res.json({
+      message: '🚀 EliteNexus Backend Running...',
+      version: packageJson.version,
+      environment: process.env.NODE_ENV || 'development',
+    });
+  }
 });
 
 // ---- ROUTES ----
