@@ -80,6 +80,9 @@ app.use('/api/probate', require('./routes/probateRoutes'));
 // CRM
 app.use('/api/crm', require('./routes/crmRoutes'));
 
+// Property intake + address normalization (single entry for addresses)
+app.use('/api/properties', require('./routes/propertyRoutes'));
+
 // Nexus Deals
 app.use('/api/deals', require('./src/routes/deals'));
 app.use('/api/activity', require('./src/routes/activity'));

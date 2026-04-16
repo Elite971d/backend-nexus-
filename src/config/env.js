@@ -32,6 +32,9 @@ const envSchema = z.object({
   RATE_LIMIT_MAX: z.string().optional().transform(Number),
   AUTH_RATE_LIMIT_WINDOW_MS: z.string().optional().transform(Number),
   AUTH_RATE_LIMIT_MAX: z.string().optional().transform(Number),
+
+  // Property intake: set to 'false' to require JWT on POST /api/properties/intake
+  PROPERTY_INTAKE_ALLOW_ANONYMOUS: z.enum(['true', 'false']).optional(),
 });
 
 /** @type {z.infer<typeof envSchema>} */
