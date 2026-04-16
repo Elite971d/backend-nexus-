@@ -105,6 +105,9 @@ app.use('/api/buyers', require('./routes/buyerRoutes'));
 app.use('/api/buyboxes', require('./routes/buyBoxRoutes'));
 app.use('/api/buyboxes/optimize', require('./routes/buyBoxOptimizationRoutes'));
 
+// Dialer intake intelligence (address check + scoring)
+app.use('/api/intake', require('./routes/intakeRoutes'));
+
 // Rapid offer
 app.use('/api/rapid-offer/dialer', require('./routes/rapidOfferDialerRoutes'));
 app.use('/api/rapid-offer/closer', require('./routes/rapidOfferCloserRoutes'));

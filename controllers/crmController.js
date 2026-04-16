@@ -14,15 +14,19 @@ const upload = multer(); // memory storage
 // GET /api/leads
 exports.getLeads = async (req, res, next) => {
   try {
-    const { status, category, q } = req.query;
+    const { status, category, q, id } = req.query;
     const filter = { tenantId: req.user.tenantId }; // Tenant-scoped
-    if (status) filter.status = status;
-    if (category) filter.category = category;
-    if (q) {
-      filter.$or = [
-        { ownerName: new RegExp(q, 'i') },
-        { propertyAddress: new RegExp(q, 'i') }
-      ];
+    if (id && /^[a-fA-F0-9]{24}$/.test(String(id))) {
+      filter._id = id;
+    } else {
+      if (status) filter.status = status;
+      if (category) filter.category = category;
+      if (q) {
+        filter.$or = [
+          { ownerName: new RegExp(q, 'i') },
+          { propertyAddress: new RegExp(q, 'i') }
+        ];
+      }
     }
 
     const leads = await Lead.find(filter).sort({ updatedAt: -1 }).limit(500);

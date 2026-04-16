@@ -143,7 +143,14 @@ const leadSchema = new mongoose.Schema(
       recordingDisclosureGiven: { type: Boolean, default: false },
       offshoreModeUsed: { type: Boolean, default: false },
       intakeCompletedAt: { type: Date },
-      intakeLocked: { type: Boolean, default: false }
+      intakeLocked: { type: Boolean, default: false },
+      addressIntelligenceScore: { type: Number, min: 0, max: 100 },
+      addressIntelligenceTier: {
+        type: String,
+        enum: ['hot', 'warm', 'cold'],
+      },
+      propertyLat: { type: Number },
+      propertyLng: { type: Number }
     },
     handoff: {
       status: {

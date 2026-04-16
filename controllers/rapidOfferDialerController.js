@@ -235,6 +235,26 @@ exports.updateIntake = async (req, res, next) => {
 
     // Update intake data
     const intakeData = { ...req.body };
+    if (intakeData.leadScore != null && intakeData.leadScore !== '') {
+      const n = Number(intakeData.leadScore);
+      if (!Number.isNaN(n)) intakeData.addressIntelligenceScore = Math.max(0, Math.min(100, n));
+      delete intakeData.leadScore;
+    }
+    if (intakeData.leadTier != null && intakeData.leadTier !== '') {
+      const t = String(intakeData.leadTier).toLowerCase();
+      if (['hot', 'warm', 'cold'].includes(t)) intakeData.addressIntelligenceTier = t;
+      delete intakeData.leadTier;
+    }
+    if (intakeData.propertyLat != null && intakeData.propertyLat !== '') {
+      const p = Number(intakeData.propertyLat);
+      if (!Number.isNaN(p)) intakeData.propertyLat = p;
+      else delete intakeData.propertyLat;
+    }
+    if (intakeData.propertyLng != null && intakeData.propertyLng !== '') {
+      const p = Number(intakeData.propertyLng);
+      if (!Number.isNaN(p)) intakeData.propertyLng = p;
+      else delete intakeData.propertyLng;
+    }
     
     // If offshore mode is enabled, ensure script selection is enforced
     if (intakeData.offshoreModeUsed && req.body.pitchText) {
